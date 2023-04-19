@@ -21,17 +21,19 @@ class RootNode(
 ) extends ParentNode[dom.Element] {
 
   if (container == null) {
-    throw new Exception("Unable to mount Laminar RootNode into a null container.")
+    throw new Exception("Unable to mount Laminar RootNode into a null container. See https://laminar.dev/documentation#waiting-for-the-dom-to-load")
   }
 
   if (!ChildNode.isNodeMounted(container)) {
-    throw new Exception("Unable to mount Laminar RootNode into an unmounted container.")
+    throw new Exception("Unable to mount Laminar RootNode into an unmounted container. See https://laminar.dev/documentation#rendering")
   }
 
   /** When we create a Root, we don't want to create a new HTML Element, we want to
     * use a reference to an existing element, the container.
     */
-  override val ref: dom.Element = container
+  final override val ref: dom.Element = container
+
+  mount()
 
   /** @return Whether child was successfully mounted */
   def mount(): Boolean = {
@@ -45,7 +47,4 @@ class RootNode(
     ParentNode.removeChild(parent = this, child = child)
   }
 
-  if (ChildNode.isNodeMounted(container)) {
-    mount()
-  }
 }

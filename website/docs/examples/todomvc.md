@@ -7,7 +7,7 @@ In addition to the code presented below, this example uses a fairly standard Tod
 <div class = "mdoc-example mdoc-example-todomvc">
 
 ```scala mdoc:js
-import com.raquo.laminar.api.L._
+import com.raquo.laminar.api.L.{*, given}
 import org.scalajs.dom
 
 object TodoMvcApp {
@@ -76,7 +76,7 @@ object TodoMvcApp {
   // --- Views ---
 
   lazy val node: HtmlElement = {
-    val $todoItems = itemsVar
+    val todoItemsSignal = itemsVar
       .signal
       .combineWith(filterVar.signal)
       .mapN(_ filter _.passes)  
@@ -92,7 +92,7 @@ object TodoMvcApp {
         cls("main"),
         ul(
           cls("todo-list"),
-          children <-- $todoItems.split(_.id)(renderTodoItem)
+          children <-- todoItemsSignal.split(_.id)(renderTodoItem)
         )
       ),
       renderStatusBar
@@ -104,33 +104,30 @@ object TodoMvcApp {
       cls("new-todo"),
       placeholder("What needs to be done?"),
       autoFocus(true),
-      inContext { thisNode =>
-        // Note: mapTo below accepts parameter by-name, evaluating it on every enter key press
-        onEnterPress.mapTo(thisNode.ref.value).filter(_.nonEmpty) -->
-          commandObserver.contramap[String] { text =>
-            thisNode.ref.value = "" // clear input
-            Create(itemText = text)
-          }
-      }
+      onEnterPress
+        .mapToValue
+        .filter(_.nonEmpty)
+        .map(Create(_))
+        .setValue("") --> commandObserver
     )
 
   // Render a single item. Note that the result is a single element: not a stream, not some virtual DOM representation.
-  private def renderTodoItem(itemId: Int, initialTodo: TodoItem, $item: Signal[TodoItem]): HtmlElement = {
+  private def renderTodoItem(itemId: Int, initialTodo: TodoItem, itemSignal: Signal[TodoItem]): HtmlElement = {
     val isEditingVar = Var(false) // Example of local state
     val updateTextObserver = commandObserver.contramap[UpdateText] { updateCommand =>
       isEditingVar.set(false)
       updateCommand
     }
     li(
-      cls <-- $item.map(item => Map("completed" -> item.completed)),
+      cls <-- itemSignal.map(item => Map("completed" -> item.completed)),
       onDblClick.filter(_ => !isEditingVar.now()).mapTo(true) --> isEditingVar.writer,
       children <-- isEditingVar.signal.map[List[HtmlElement]] {
         case true =>
-          renderTextUpdateInput(itemId, $item, updateTextObserver) :: Nil
+          renderTextUpdateInput(itemId, itemSignal, updateTextObserver) :: Nil
         case false =>
           List(
-            renderCheckboxInput(itemId, $item),
-            label(child.text <-- $item.map(_.text)),
+            renderCheckboxInput(itemId, itemSignal),
+            label(child.text <-- itemSignal.map(_.text)),
             button(
               cls("destroy"),
               onClick.mapTo(Delete(itemId)) --> commandObserver
@@ -140,38 +137,32 @@ object TodoMvcApp {
     )
   }
 
-  // Note that we pass reactive variables: `$item` for reading, `updateTextObserver` for writing
+  // Note that we pass reactive variables: `itemSignal` for reading, `updateTextObserver` for writing
   private def renderTextUpdateInput(
     itemId: Int,
-    $item: Signal[TodoItem],
+    itemSignal: Signal[TodoItem],
     updateTextObserver: Observer[UpdateText]
   ) =
     input(
       cls("edit"),
-      defaultValue <-- $item.map(_.text),
+      defaultValue <-- itemSignal.map(_.text),
       onMountFocus,
-      inContext { thisNode =>
-        @inline def updateText = UpdateText(itemId, thisNode.ref.value)
-
-        List(
-          onEnterPress.mapTo(updateText) --> updateTextObserver,
-          onBlur.mapTo(updateText) --> updateTextObserver
-        )
-      }
+      onEnterPress.mapToValue.map(UpdateText(itemId, _)) --> updateTextObserver,
+      onBlur.mapToValue.map(UpdateText(itemId, _)) --> updateTextObserver
     )
 
-  private def renderCheckboxInput(itemId: Int, $item: Signal[TodoItem]) =
+  private def renderCheckboxInput(itemId: Int, itemSignal: Signal[TodoItem]) =
     input(
       cls("toggle"),
       typ("checkbox"),
-      checked <-- $item.map(_.completed),
+      checked <-- itemSignal.map(_.completed),
       onInput.mapToChecked.map { isChecked =>
         UpdateCompleted(itemId, completed = isChecked)
       } --> commandObserver
     )
 
   private def renderStatusBar =
-    footer(
+    footerTag(
       hideIfNoItems,
       cls("footer"),
       span(

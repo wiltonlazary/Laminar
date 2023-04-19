@@ -34,19 +34,19 @@ As mentioned above, I did previously use virtual DOM in Laminar, and this experi
 
 Outwatch and Laminar are quite similar cosmetically – their arrows notation was just too good not to steal – but they're vastly different under the hood. If you're curious, you can dive into sources to compare how a simple expression such as `div(widthAttr <-- widthStream)` is handled. See what exactly happens when a new event is sent to `widthStream`. Ignore the internals of the streaming libraries (RxJS and Airstream) which call `Observer.onNext` (as they'll be quite similar), but do look at the rest of the code path otherwise. Here it is for Laminar v0.8:
 
-1) Go to definition of this `<--` method, it's in `ReactiveHtmlAttr` because that's what `widthAttr` is:
+1) Go to definition of this `<--` method, it's in `HtmlAttr` because that's what `widthAttr` is:
 
 ```scala
-  def <--($value: Observable[V]): Binder[HtmlElement] = {
+  def <--(values: Observable[V]): Binder[HtmlElement] = {
     Binder { element =>
-      ReactiveElement.bindFn(element, $value) { value =>
+      ReactiveElement.bindFn(element, values) { value =>
         DomApi.setHtmlAttribute(element, this, value)
       }
     }
   }
 ```
 
-2) Putting our reactive boilerplate aside for a moment, you see that we call `DomApi.setHtmlAttribute` when `widthStream` (i.e. `$value` here) emits a new `value`. Going to its definition we see:
+2) Putting our reactive boilerplate aside for a moment, you see that we call `DomApi.setHtmlAttribute` when `widthStream` (i.e. `values` here) emits a new `value`. Going to its definition we see:
 
 ```scala
   def setHtmlAttribute[V](element: ReactiveHtmlElement.Base, attr: HtmlAttr[V], value: V): Unit = {
@@ -61,4 +61,4 @@ Outwatch and Laminar are quite similar cosmetically – their arrows notation wa
 
 That `element.ref.setAttribute(...)` is a call to native Javascript DOM API. There is no library code behind it. You can see for yourself how the same code path goes in Outwatch. It's quite a bit more involved, especially if you look into Snabbdom. I won't even ask you to try this with React.
 
-I guess I skipped over how `Binder` works. On a high level, when the element is mounted, the Binder subscribes the provided callback to fire every time the `$value` observable emits a new value, and kills that subscription when the element is unmounted. You can of course follow the `Binder.apply` method and `ReactiveElement.bindFn` to see how this works, but that's going very deep into the innards our reactive system, and you'll want to read our docs. We do explain how everything works in great detail.
+I guess I skipped over how `Binder` works. On a high level, when the element is mounted, the Binder subscribes the provided callback to fire every time the `values` observable emits a new value, and kills that subscription when the element is unmounted. You can of course follow the `Binder.apply` method and `ReactiveElement.bindFn` to see how this works, but that's going very deep into the innards our reactive system, and you'll want to read our docs. We do explain how everything works in great detail.

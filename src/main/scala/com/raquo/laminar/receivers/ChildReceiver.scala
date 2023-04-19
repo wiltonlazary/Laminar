@@ -1,23 +1,24 @@
 package com.raquo.laminar.receivers
 
 import com.raquo.airstream.core.Source
-import com.raquo.laminar.modifiers.ChildrenInserter.Child
-import com.raquo.laminar.modifiers.{ChildInserter, Inserter}
-import com.raquo.laminar.nodes.ReactiveElement
+import com.raquo.laminar.modifiers.{ChildInserter, Inserter, RenderableNode}
+import com.raquo.laminar.nodes.ChildNode
 
 object ChildReceiver {
 
-  val maybe: MaybeChildReceiver.type = MaybeChildReceiver
+  val maybe: ChildOptionReceiver.type = ChildOptionReceiver
 
-  val text: TextChildReceiver.type = TextChildReceiver
+  val text: ChildTextReceiver.type = ChildTextReceiver
 
-  @deprecated("Use child.text instead of child.int, it can handle integers too now.", "0.12.0")
-  val int: TextChildReceiver.type = TextChildReceiver
-
-  def <--($node: Source[Child]): Inserter[ReactiveElement.Base] = {
-    ChildInserter[ReactiveElement.Base](
-      _ => $node.toObservable,
-      initialInsertContext = None
-    )
+  def <--(childSource: Source[ChildNode.Base]): Inserter.Base = {
+    ChildInserter(childSource.toObservable, RenderableNode.nodeRenderable)
   }
+
+  implicit class RichChildReceiver(val self: ChildReceiver.type) extends AnyVal {
+
+    def <--[Component](childSource: Source[Component])(implicit renderable: RenderableNode[Component]): Inserter.Base = {
+      ChildInserter(childSource.toObservable, renderable)
+    }
+  }
+
 }

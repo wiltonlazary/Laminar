@@ -9,10 +9,12 @@ target
 
 project/metals.sbt
 project/.bloop
-project/project
+project/project/target
 
 yarn.lock
 
 website/node_modules
 website/build
 website/i18n/*
+
+websiteJS/package-lock.json

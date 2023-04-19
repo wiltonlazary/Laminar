@@ -28,7 +28,7 @@ class ShadowDomSpec extends UnitSpec {
         shadowRoot.appendChild(childDiv)
 
         assert(shadowRoot.parentNode == null)
-        assert(shadowRoot.asInstanceOf[js.Dynamic].host.asInstanceOf[js.UndefOr[dom.Node]] == js.defined(parentDiv))
+        assert(shadowRoot.asInstanceOf[js.Dynamic].host.asInstanceOf[Any] == parentDiv)
 
         assert(ChildNode.isDescendantOf(childDiv, parentDiv))
         assert(ChildNode.isDescendantOf(childDiv, shadowRoot))
@@ -58,7 +58,7 @@ class ShadowDomSpec extends UnitSpec {
 
         expectNode(app.ref, div.of(
           "Hello, ",
-          span.of(ExpectedNode.comment))
+          span.of(sentinel))
         )
 
         // --

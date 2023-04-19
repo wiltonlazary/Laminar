@@ -1,8 +1,11 @@
-package com.raquo.laminar.static
+package com.raquo.laminar.basic
 
 import com.raquo.domtestutils.matching.ExpectedNode
+import com.raquo.laminar.DomApi
+import com.raquo.laminar.api.L.{svg => s}
 import com.raquo.laminar.api.L._
 import com.raquo.laminar.utils.UnitSpec
+import org.scalajs.dom
 
 class ElementSpec extends UnitSpec {
 
@@ -39,14 +42,14 @@ class ElementSpec extends UnitSpec {
     expectNode(span of text1)
     unmount()
 
-    mount("article (fancy element from Tags2)", article(text1))
-    expectNode(article of text1)
+    mount("article (fancy element from Tags2)", articleTag(text1))
+    expectNode(articleTag of text1)
     unmount()
   }
 
   it("renders two text nodes") {
-    mount(article(text1, text2))
-    expectNode(article.of(text1, text2))
+    mount(articleTag(text1, text2))
+    expectNode(articleTag.of(text1, text2))
   }
 
   it("renders nested elements") {
@@ -83,5 +86,96 @@ class ElementSpec extends UnitSpec {
       hr
     ))
     unmount()
+  }
+
+  it("renders foreign HTML elements") {
+    mount(
+      div(
+        b("Hello"),
+        foreignHtmlElement(span, DomApi.unsafeParseHtmlString(span, "<span class='foo'>world</span>")),
+        foreignHtmlElement(DomApi.unsafeParseHtmlString("<span class='bar'>sun</span>")),
+        " Eh"
+      )
+    )
+
+    expectNode(
+      div of (
+        b of "Hello",
+        span of (
+          cls is "foo",
+          "world"
+        ),
+        span of(
+          cls is "bar",
+          "sun"
+        ),
+        " Eh"
+      )
+    )
+  }
+
+  it("renders foreign SVG root elements") {
+    mount(
+      div(
+        b("Hello"),
+        foreignSvgElement(DomApi.unsafeParseSvgString("<svg height=\"200\" width='400'><circle cx='200' cy='15' r='30' fill='red'></circle></svg>")),
+        " Eh"
+      )
+    )
+
+    expectNode(
+      div of (
+        b of "Hello",
+        s.svg of (
+          s.height is "200",
+          s.width is "400",
+          s.circle of (
+            s.cx is "200",
+            s.cy is "15",
+            s.r is "30",
+            s.fill is "red"
+          )
+        ),
+        " Eh"
+      )
+    )
+  }
+
+  it("renders foreign SVG sub-elements") {
+    mount(
+      div(
+        b("Hello"),
+        s.svg(
+          s.height("200"),
+          s.width("400"),
+          foreignSvgElement(svg.circle, DomApi.unsafeParseSvgString(svg.circle, "<circle cx='200' cy='15' r='30' fill='red'></circle>")),
+          foreignSvgElement(DomApi.unsafeParseSvgString("<circle cx='2000' cy='150' r='300' fill='blue'></circle>"))
+        ),
+        " Eh"
+      )
+    )
+
+    expectNode(
+      div of (
+        b of "Hello",
+        s.svg of (
+          s.height is "200",
+          s.width is "400",
+          s.circle of (
+            s.cx is "200",
+            s.cy is "15",
+            s.r is "30",
+            s.fill is "red"
+          ),
+          s.circle of(
+            s.cx is "2000",
+            s.cy is "150",
+            s.r is "300",
+            s.fill is "blue"
+          )
+        ),
+        " Eh"
+      )
+    )
   }
 }

@@ -1,7 +1,7 @@
 package com.raquo.laminar.nodes
 
-import com.raquo.airstream.JsArray
 import com.raquo.airstream.ownership.DynamicOwner
+import com.raquo.ew._
 import com.raquo.laminar.DomApi
 import org.scalajs.dom
 
@@ -15,14 +15,12 @@ trait ParentNode[+Ref <: dom.Element] extends ReactiveNode[Ref] {
     throw new Exception(s"Attempting to use owner of unmounted element: $path")
   })
 
-  // @TODO[Performance] We should get rid of this.
-  //  - The only place where we need this is ReplaceAll functionality of ChildrenCommand API
+  // @TODO[Performance] We could get rid of this.
+  //  - The only place where we really need this is ReplaceAll functionality of ChildrenCommand API
   //  - We can probably track specific children affected by that API instead
   //  - That would save us mutable Buffer searches and manipulations when inserting and removing nodes
-  private var _maybeChildren: Option[JsArray[ChildNode.Base]] = None
-
-  @deprecated("ParentNode.maybeChildren will be removed in a future version of Laminar.", "0.8")
-  @inline def maybeChildren: Option[List[ChildNode.Base]] = _maybeChildren.map(_.asInstanceOf[js.Array[ChildNode.Base]].toList)
+  //  - I mean we could look at the real DOM nodes instead where needed. Would that be more efficient? We'd need to benchmark.
+  private var _maybeChildren: js.UndefOr[JsArray[ChildNode.Base]] = js.undefined
 }
 
 object ParentNode {
@@ -62,7 +60,7 @@ object ParentNode {
 
       // 2B. Update this node
       if (parent._maybeChildren.isEmpty) {
-        parent._maybeChildren = Some(JsArray(child))
+        parent._maybeChildren = JsArray(child)
       } else {
         parent._maybeChildren.foreach(children => children.push(child))
       }
@@ -114,7 +112,7 @@ object ParentNode {
 
     // 0. Prep this node
     if (parent._maybeChildren.isEmpty) {
-      parent._maybeChildren = Some(JsArray())
+      parent._maybeChildren = JsArray[ChildNode.Base]()
     }
 
     parent._maybeChildren.foreach { children =>
@@ -162,12 +160,11 @@ object ParentNode {
     newChild: ChildNode.Base
   ): Boolean = {
     var replaced = false
-    parent._maybeChildren.foreach { children =>
-
-      // 0. Check precondition required for consistency of our own Tree vs real DOM
-      if (oldChild != newChild) {
-        val indexOfChild = children.indexOf(oldChild)
-        if (indexOfChild != -1) {
+    // 0. Check precondition required for consistency of our own Tree vs real DOM
+    if (oldChild ne newChild) { // #TODO[API] Can we move this check outside of replaceChild? Or will something break? Sometimes this check is extraneous.
+      parent._maybeChildren.foreach { children =>
+        val indexOfOldChild = children.indexOf(oldChild)
+        if (indexOfOldChild != -1) {
           val newChildNextParent = Some(parent)
           oldChild.willSetParent(None)
           newChild.willSetParent(newChildNextParent)
@@ -179,12 +176,22 @@ object ParentNode {
             oldChild = oldChild
           )
 
-          // 2. Update this node
-          children.update(indexOfChild, newChild)
+          if (replaced) {
+            // 2A. Update new child's current parent node
+            newChild.maybeParent.foreach { childParent =>
+              childParent._maybeChildren.foreach { children =>
+                val ix = children.indexOf(newChild)
+                children.splice(ix, deleteCount = 1)
+              }
+            }
 
-          // 3. Update children
-          oldChild.setParent(None)
-          newChild.setParent(newChildNextParent)
+            // 2B. Update this node
+            children.update(indexOfOldChild, newChild)
+
+            // 3. Update children
+            oldChild.setParent(None)
+            newChild.setParent(newChildNextParent)
+          }
         }
       }
     }
@@ -222,11 +229,11 @@ object ParentNode {
     // @TODO[Performance] introduce a reorderChildren() method to support efficient sorting?
     // @TODO[Integrity] This does not properly report failures like other methods do
 
-    val newChildrenArr = newChildren.toJSArray.asInstanceOf[JsArray[ChildNode.Base]] // #TODO
+    val newChildrenArr = newChildren.toJSArray.ew
 
     // 0. Prep this node
     if (parent._maybeChildren.isEmpty) {
-      parent._maybeChildren = Some(JsArray())
+      parent._maybeChildren = JsArray[ChildNode.Base]()
     }
 
     var replaced = false
