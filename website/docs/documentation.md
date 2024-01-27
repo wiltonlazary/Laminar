@@ -5,6 +5,8 @@ title: Documentation
 * [Introduction](#introduction)
 * [Dependencies](#dependencies)
 * [Imports](#imports)
+* [Rendering](#rendering)
+  * [Waiting for the DOM to load](#waiting-for-the-dom-to-load)
 * [Tags & Elements](#tags--elements)
 * [Modifiers](#modifiers)
   * [Nesting and Children](#nesting-and-children)
@@ -13,8 +15,6 @@ title: Documentation
   * [Reusing Elements](#reusing-elements)
   * [Missing Keys](#missing-keys)
   * [Modifiers FAQ](#modifiers-faq)
-* [Rendering](#rendering)
-  * [Waiting for the DOM to load](#waiting-for-the-dom-to-load)
 * [Reactive Data](#reactive-data)
   * [Attributes and Properties](#attributes-and-properties)
   * [Event Streams and Signals](#event-streams-and-signals)
@@ -68,10 +68,12 @@ title: Documentation
   * [Lifecycle Event Timing](#lifecycle-event-timing)
   * [How Are Mount Events Propagated?](#how-are-mount-events-propagated)
 * [Integrations With Other Libraries](#integrations-with-other-libraries)
+* [Network Requests](#network-requests)
 * [URL Routing](#url-routing)
 * [Anti-patterns](#anti-patterns)
 * [Browser Compatibility](#browser-compatibility)
 * [Special Cases](#special-cases)
+* [Troubleshooting](#troubleshooting)
 
 
 
@@ -79,12 +81,12 @@ title: Documentation
 
 ## Introduction
 
-This documentation is for Laminar version **v15.0.0**. For other versions, see below.
+This documentation is for Laminar version **v16.0.0**. For other versions, see below.
 
-| Laminar | Airstream |
-| :--- | :--- |
-| **[master](https://github.com/raquo/Laminar/blob/master/docs/Documentation.md)** | **[master](https://github.com/raquo/Airstream/blob/master/README.md)** |
-| **[v15.0.0](https://laminar.dev/documentation)** | **[v15.0.0](https://github.com/raquo/Airstream/blob/v15.0.0/README.md)** |
+| Laminar                                                                            | Airstream                                                                |
+|:-----------------------------------------------------------------------------------|:-------------------------------------------------------------------------|
+| **[v16.0.0](https://github.com/raquo/Laminar/blob/v16.0.0/docs/Documentation.md)** | **[v16.0.0](https://github.com/raquo/Airstream/blob/v16.0.0/README.md)** |
+| **[v15.0.0](https://github.com/raquo/Laminar/blob/v15.0.0/docs/Documentation.md)** | **[v15.0.0](https://github.com/raquo/Airstream/blob/v15.0.0/README.md)** |
 | **[v0.14.2](https://github.com/raquo/Laminar/blob/v0.14.2/docs/Documentation.md)** | **[v0.14.2](https://github.com/raquo/Airstream/blob/v0.14.2/README.md)** |
 | **[v0.13.1](https://github.com/raquo/Laminar/blob/v0.13.1/docs/Documentation.md)** | **[v0.13.0](https://github.com/raquo/Airstream/blob/v0.13.0/README.md)** |
 | **[v0.12.2](https://github.com/raquo/Laminar/blob/v0.12.2/docs/Documentation.md)** | **[v0.12.2](https://github.com/raquo/Airstream/blob/v0.12.2/README.md)** |
@@ -108,13 +110,13 @@ If you want to follow along with an IDE, download one of the starter kit project
 
 Add Laminar to `libraryDependencies` of your Scala.js project in `build.sbt`:
 
-    "com.raquo" %%% "laminar" % "15.0.0"  // Requires Scala.js 1.13.0
+    "com.raquo" %%% "laminar" % "16.0.0"  // Requires Scala.js 1.13.2+
 
 Laminar depends on Airstream. Every Laminar version includes the latest version of Airstream that was available at the time it was published. If you ever have a reason to use a slightly newer version of Airstream without upgrading Laminar, add this to your `build.sbt` as well:
 
     "com.raquo" %%% "airstream" % "<version>"
 
-As you can see, Laminar and Airstream versions can diverge slightly, so don't use a single `LaminarVersion` variable to for both.
+As you can see, Laminar and Airstream versions can diverge slightly, so don't use a single `LaminarVersion` variable for both.
 
 The html/svg tags, attributes, props, styles, and event names in Laminar come from [Scala DOM Types](https://github.com/raquo/scala-dom-types). If there's a missing prop, consider contributing it there.
 
@@ -135,6 +137,64 @@ There are special import considerations for working with [SVG elements](#svg).
 Do check out the available aliases in the `L` object. It's much more pleasant to write and read `Mod[Input]` than `Modifier[ReactiveHtmlElement[dom.html.Input]]`.
 
 Another import you will want in some cases is `import org.scalajs.dom` – whenever you see `dom.X` in documentation, this import is assumed. This object contains [scala-js-dom](https://github.com/scala-js/scala-js-dom) native JS DOM types. I highly recommend that you import this `dom` object and not `dom.*` or `dom._` because the `dom.` prefix will help you distinguish native JS platform types from Laminar types.
+
+
+
+## Rendering
+
+When you create a Laminar element, the underlying real JS DOM element (`.ref`) is created at the same time. However, it is initially detached from the DOM. That is, it does not appear in the document that the user sees. Such an element is _unmounted_.
+
+For the user to see this element we need to _mount_ it into the DOM by either adding it as a Modifier to another element that already is (or at some point will become) _mounted_, or if we're dealing with the top element in our application's hierarchy, we ask Laminar to _render_ it into some container `dom.Element` that already exists on the page. Said container must not be managed by Laminar.
+
+```scala
+val appContainer: dom.Element = dom.document.querySelector("#appContainer")
+val appElement: Div = div(
+  h1("Hello"),
+  "Current time is:",
+  b("12:00") 
+)
+ 
+val root: RootNode = render(appContainer, appElement)
+```
+
+That's it. Laminar will find an element with id "appContainer" in the document, and append `appElement.ref` as its child. For sanity sake, the container should not have any other children, but that's not really a requirement.
+
+To remove `appElement` from the DOM, simply call `root.unmount()`. You can later call `root.mount()` to bring it back.
+
+
+### Waiting for the DOM to load
+
+When and where should you call Laminar's `render` method? Assuming you want your entire application to be powered by Laminar, you want to render your application as soon as the web page containing it loads.
+
+However, what does "loads" mean, exactly? If you just put your code in your Scala.js app's `main` method, it will execute right after the `<script>` tag containing your Scala.js bundle was downloaded. At this point, whether accessing `dom.document.querySelector("#appContainer")` will work or not depends on the position of the `<script>` tag relative to `<div id="appContainer">` in your HTML file. If the container div comes first in your HTML document, then your script will be able to access it. Usually this is all that is needed to render your application, so my recommendation is to place your Scala.js script tag at just before the closing `</body>` tag in your HTML, and place any other elements / scripts / stylesheets / resources that you need at app launch above it. Do not place the `<script>` element inside of `<div id="appContainer">`.
+
+Alternatively, you may want to delay rendering until the browser's [DOMContentLoaded](https://developer.mozilla.org/en-US/docs/Web/API/Window/DOMContentLoaded_event) event fires. You can do that with a special `renderOnDomContentLoaded` helper:
+
+```scala
+object App {
+  def main(args: Array[String]): Unit = {
+    lazy val appContainer = dom.document.querySelector("#appContainer")
+    val appElement = div(h1("Hello world"))
+    renderOnDomContentLoaded(appContainer, appElement)
+  }
+}
+```
+
+Important: if you're relying on `renderOnDomContentLoaded` to delay the rendering, make sure that `appContainer` is a `lazy val` or a `def`, because if that querySelector is executed before the browser parses the div in your DOM, it will return `null`, and Laminar will complain about the null container. Of course, another reason you could be getting a `null` is if the querySelector you provided is not correct. You can manually test it in the browser dev console.
+
+Lastly, if you want to delay app rendering until not only the DOM, but all images and iframes from the HTML have also loaded, you can wait for the [window.load](https://developer.mozilla.org/en-US/docs/Web/API/Window/load_event) event. There is no built-in helper method for that, so you will need to do it more manually:
+
+```scala
+object App {
+  def main(args: Array[String]): Unit = {
+    windowEvents(_.onLoad).foreach { _ =>
+      val appContainer = dom.document.querySelector("#appContainer")
+      val appElement = div(h1("Hello world"))
+      render(appContainer, appElement)
+    }(unsafeWindowOwner)
+  }
+}
+```
 
 
 
@@ -211,7 +271,7 @@ For convenience, `Seq[Modifier[A]]` is also implicitly converted to a `Modifier[
 def TextInput(inputMods: Modifier[Input]*): HtmlElement =
   div(
     cls := "TextInput",
-    input(type := "text", inputMods)
+    input(typ := "text", inputMods)
   )
 
 // Usage (data binding with arrows will be explained later)
@@ -309,7 +369,7 @@ div(
   // List[Mod[El]] is implicitly converted to Mod[El]
   // so you can specify several modifiers like this:
   TextInput().amendThis { thisNode => List(
-    onInput.mapTo(thisNode.ref.value) --> nameVar,
+    onInput.mapTo(thisNode.ref.value) --> nameVar, // Note: `mapToValue` is easier, does not require thisNode
     thisNode.events(onClick).delay(0) --> clickObserver  
   )}
 )
@@ -430,64 +490,6 @@ To clarify, you don't have to do this for touch events specifically, because [@B
 2. No, Modifiers are not guaranteed to be idempotent. Applying the same Modifier to the same element multiple times might have different results compared to applying it only once. `Setter`s like `key := value` _are_ idempotent, but for example a `Binder` like `onClick --> observer` isn't – applying it twice will create two independent subscriptions. We will talk more about those modifier types later.
 
 4. Yes, Modifiers are generally reusable. The same modifier can usually be applied to multiple nodes without any conflict. But again, you have to understand what the modifier does. Setting an attribute to a particular value – sure, reusable. Adding a particular element as a child – no, not reusable – see [Reusing Elements](#reusing-elements). If you're writing your own Modifier and want to make it reusable, don't store element-specific state outside of its `apply` method.
-
-
-
-## Rendering
-
-When you create a Laminar element, the underlying real JS DOM element (`.ref`) is created at the same time. However, it is initially detached from the DOM. That is, it does not appear in the document that the user sees. Such an element is _unmounted_.
-
-For the user to see this element we need to _mount_ it into the DOM by either adding it as a Modifier to another element that already is (or at some point will become) _mounted_, or if we're dealing with the top element in our application's hierarchy, we ask Laminar to _render_ it into some container `dom.Element` that already exists on the page. Said container must not be managed by Laminar. 
-
-```scala
-val appContainer: dom.Element = dom.document.querySelector("#appContainer")
-val appElement: Div = div(
-  h1("Hello"),
-  "Current time is:",
-  b("12:00") 
-)
- 
-val root: RootNode = render(appContainer, appElement)
-```
-
-That's it. Laminar will find an element with id "appContainer" in the document, and append `appElement.ref` as its child. For sanity sake, the container should not have any other children, but that's not really a requirement.
-
-To remove `appElement` from the DOM, simply call `root.unmount()`. You can later call `root.mount()` to bring it back.
-
-
-### Waiting for the DOM to load
-
-When and where should you call Laminar's render method? Assuming you want your entire application to be powered by Laminar, you want to render your application as soon as the web page containing it loads.
-
-However, what does "loads" mean, exactly? If you just put your code in your Scala.js app's `main` method, it will execute right after the `<script>` tag containing your Scala.js bundle was downloaded. At this point, accessing `dom.document.querySelector("#appContainer")` will probably not work, because the browser probably hasn't parsed that HTML element yet (`<script>` blocks DOM parsing until it's downloaded and executed).
-
-So, you probably want to render your application in response to the browser firing the [DOMContentLoaded](https://developer.mozilla.org/en-US/docs/Web/API/Window/DOMContentLoaded_event) event. You can do this manually with native JS `addEventListener`, or less manually using Laminar's `documentEvents(_.onDOMContentLoaded)` stream, or – preferably – simply call Laminar's `renderOnDomContentLoaded` method instead of `render`:
- 
-```scala
-object App {
-  def main(args: Array[String]): Unit = {
-    lazy val appContainer = dom.document.querySelector("#appContainer")
-    val appElement = div(h1("Hello world"))
-    renderOnDomContentLoaded(appContainer, appElement)
-  }
-}
-```
-
-Important: make sure that `appContainer` is a `lazy val` or a `def`, because if that querySelector is executed before the browser parses the DOM, it will return `null`, and Laminar will complain about the null container. Of course, another reason you could be getting a `null` is if the querySelector you provided is not correct. You can test it in the browser dev console.
-
-If you want to delay app rendering until not only the DOM, but all images and stylesheets have also loaded, you can wait for the [window.load](https://developer.mozilla.org/en-US/docs/Web/API/Window/load_event) event. There is no built-in helper method for that, so you will need to do it more manually:
-
-```scala
-object App {
-  def main(args: Array[String]): Unit = {
-    windowEvents(_.onLoad).foreach { _ =>
-      val appContainer = dom.document.querySelector("#appContainer")
-      val appElement = div(h1("Hello world"))
-      render(appContainer, appElement)
-    }(unsafeWindowOwner)
-  }
-}
-```
 
 
 
@@ -831,7 +833,7 @@ val outputSignal: Signal[HtmlElement] =
   inputSignal.split(key = _.isMultiLine)(project = renderEditor)
 ```
 
-The high-level purpose of this code is to avoid creating a new element when inpuSignal emits a new value. The interesting part is **when** we do need to create the new element: when the Editor's `isMultiline` property changes, we need to switch to using either a single-line `<input>` element, or a multi-line `textArea`. Changing the type of the element is one kind of update that is impossible to do without re-creating the element.
+The high-level purpose of this code is to avoid creating a new element when `inputSignal` emits a new value. The interesting part is **when** we do need to create the new element: when the Editor's `isMultiline` property changes, we need to switch to using either a single-line `<input>` element, or a multi-line `textArea`. Changing the type of the element is one kind of update that is impossible to do without re-creating the element.
 
 Another use case for this is when you want to reset a complex component's state, for example:
 
@@ -1159,9 +1161,9 @@ cls := (Seq("class1" -> true, "class2" -> someBoolean), Seq("class3" -> someBool
 cls := Map("class1" -> true, "class2" -> false)
  
 // Add class names conditionally (true = add, false = do nothing)
-cls.toggle("class1") := true
-cls.toggle("class1 class2") := someBoolean
-cls.toggle("class1", "class2") := true
+cls("class1") := true
+cls("class1 class2") := someBoolean
+cls("class1", "class2") := true
 ```
 
 Of course, the reactive layer is similarly considerate in regard to `cls`. Consider this use case:
@@ -1173,7 +1175,7 @@ val isSelectedSignal: Signal[Boolean] = ???
 div(
   cls := "MyComponent",
   cls <-- classesStream,
-  cls.toggle("class1", "class2") <-- isSelectedSignal,
+  cls("class1", "class2") <-- isSelectedSignal,
   cls <-- boolSignal.map { isSelected =>
     if (isSelected) "always x-selected" else "always"
   },
@@ -1190,7 +1192,7 @@ Once again, we don't want the CSS class names coming in from `classesStream` to 
 
 So for example, when `classesStream` emits `List("class1", "class2")`, we will _add_ those classes to the element. When it subsequently emits `List("class1", "class3")`, we will remove `class2` and add `class3` to the element's class list.
 
-The **`<--`** method can be called with Observables of `String`, `Seq[String]`, `Seq[(String, Boolean)]`, `Map[String, Boolean]`, `Seq[Seq[String]]`, `Seq[Seq[(String, Boolean)]]`. The ones involving booleans let you issue events that instruct Laminar to remove certain classes **that were previously added by this same modifier** (by setting their value to `false`). **Importantly, cls modifiers never remove classes added by other modifiers.** So if you said `cls := "foo"` somewhere, no other modifier can later remove this `foo` class. If you need to add and remove `foo` over time, use `cls.toggle("foo") <-- shouldUseFooStream` or similar dynamic modifiers.
+The **`<--`** method can be called with Observables of `String`, `Seq[String]`, `Seq[(String, Boolean)]`, `Map[String, Boolean]`, `Seq[Seq[String]]`, `Seq[Seq[(String, Boolean)]]`. The ones involving booleans let you issue events that instruct Laminar to remove certain classes **that were previously added by this same modifier** (by setting their value to `false`). **Importantly, cls modifiers never remove classes added by other modifiers.** So if you said `cls := "foo"` somewhere, no other modifier can later remove this `foo` class. If you need to add and remove `foo` over time, use `cls("foo") <-- shouldUseFooStream` or similar dynamic modifiers.
 
 If you (or a third party library you're using) are adding or removing class names without Laminar, using native JS APIs like `ref.className = ???` and `ref.classList.add(???)`, and you are **also** using `cls` modifiers on this **same** element, you must take care to avoid manually adding or removing the same classes as you're setting using the `cls` modifiers. Doing so may cause unexpected behaviour. Basically, **a given class name on a given element should be managed either via Laminar `cls` modifiers or externally via JS APIs, but not both**. See the `cls - third party interference` test in `CompositeKeySpec` for a simple example.
 
@@ -1603,7 +1605,7 @@ input(
 
 We could also route the `onInput` event in any other way, we could even update zipVar asynchronously. When Laminar detects that `onInput` event happened and you didn't synchronously update the observable that the `value` is locked to, `zipValueSignal` in this case, we set the value property to the previous value emitted by `zipValueSignal`. This happens synchronously, so the user will feel as if their input was ignored, they will not even see it flash.
 
-Then if your logic updates the `value` prop at some point in the future, the it will work as you'd expect. Your updates to `zipValueSignal` don't actually need to come exclusively from user input, you can emit a value into that observable any time, and the `value` prop will update to match.
+Then if your logic updates the `value` prop at some point in the future, it will work as you'd expect. Your updates to `zipValueSignal` don't actually need to come exclusively from user input, you can emit a value into that observable any time, and the `value` prop will update to match.
 
 Note that Laminar can't do anything if you manually set the element's value, either via `inputEl.ref.value = "newValue"` or using the `setAsValue` EventProcessor. You should not use either of these methods with controlled inputs. Speaking of, you shouldn't call `preventDefault` on controlled events either, even on events that are cancelable (`onInput` is not), because for example for checkboxes the rollback of checked state happens **after** the event listener has finished executing, potentially undoing Laminar's changes to the `checked` property and de-syncing it from the controlling observable.
 
@@ -1958,13 +1960,13 @@ Lifecycle hooks let you do stuff when the element is being mounted or unmounted,
 
 **In JS DOM** an element is said to be mounted when one of its ancestors is the document being displayed: `dom.document`. In other words, a mounted element is present in the DOM, or "attached" to the DOM. On the contrary, elements that are not mounted are called "unmounted" or "detached". Those elements are not present in the DOM. They might have none, one or more ancestors, but none of them are `dom.document`, so the highest level ancestor of this element must have no parent.
 
-**Laminar** does not get notified by the browser when elements change parents and become mounted / unmounted. Therefore technically we use a slightly different definition of mounted / unmounted elements. A Laminar element is considered mounted when one of its ancestors is a **mounted** Laminar `RootNode`. A `RootNode` is created with `val rootNode = render(containerEl, contentEl)`. A `RootNode` is mounted immediately if `containerEl` was present in the DOM when `render` is called. Other than that, you need to manually call `mount()` / `unmount()` methods on `rootNode` to toggle its mounted / unmounted state.
+**Laminar** does not get notified by the browser when elements change parents and become mounted / unmounted. Therefore, technically we use a slightly different definition of mounted / unmounted elements. A Laminar element is considered mounted when one of its ancestors is a **mounted** Laminar `RootNode`. A `RootNode` is created with `val rootNode = render(containerEl, contentEl)`. A `RootNode` is mounted immediately when it's initialized if `containerEl` was present in the DOM when `render` is called. If you manually remove one of RootNode's ancestor elements from the DOM, you should call `unmount()` on the `RootNode`, otherwise Laminar will still consider the RootNode mounted, which is probably not be what you want.
 
-In practice this distinction is only useful for integrating with third party libraries, e.g. rendering a Laminar element inside a React.js component. If you're rendering your whole app in Laminar, you're likely rendering it into some `<div id="appContainer"></div>` element that's always present in the DOM so there is no practical difference between Laminar's definition of mounting and JS DOM definition of mounting.
+In practice the distinction between JS DOM mounting and Laminar mounting meaning is only important when Laminar is not managing the entire DOM in your app. For example, when you are rendering Laminar elements inside a React.js components. If you're rendering your whole app in Laminar, you're likely rendering it into some `<div id="appContainer"></div>` element that's always present in the DOM so there is no practical difference between Laminar's definition of mounting and JS DOM definition of mounting.
 
-Laminar elements that are mounted are also called active, because the subscriptions associated with them are also active while they're mounted. Every Laminar element starts out unmounted because it has no parent. An element can become mounted if its parent becomes mounted – either if parent is changed to a different one, or if the same parent becomes mounted. The latter is a recursion that terminates at the `RootNode`.
+Laminar elements that are mounted are also called "active", because the subscriptions associated with them are also active while they're mounted. Every Laminar element starts out unmounted because it has no parent at initialization time. An element can become mounted if its parent becomes mounted – either if its parent is changed to a different one, or if the same parent becomes mounted. The latter is a recursion that terminates at the `RootNode`.
 
-You can check if a node is mounted in JS DOM terms with `ChildNode.isNodeMounted`.
+You can check if a node is mounted in JS DOM terms with `DomApi.isDescendantOf(node.ref, dom.document)`.
 
 You can check if a Laminar element is mounted in Laminar terms using `ReactiveElement.isActive`.
 
@@ -2019,11 +2021,13 @@ printBus.writer.onNext("hi") // this will print "Mod: hi" and "Mount: hi"
 ```
 
 The bottom line is, avoid using `onMountCallback` if all you need is a reference to `thisNode` or `Owner`. Better use `inContext` or `amend` if you need `thisNode`, and binders like `foo <-- bar` instead of messing with owners manually. Use `onMountCallback` when its purpose aligns with your big picture: running some code on mount. The same goes for all other helpers below.
+
+To reiterate for – you don't necessarily need `onMountCallback` if you want to do something on mount only. For example, you could say `onMountBind(_ => observable --> onNext)` to get similar behaviour without messing with the owners manually. More on other such `onMount*` helpers below.
  
 
 ### onUnmountCallback & onMountUnmountCallback
 
-Works just like `onMountCallback`, same caveats.
+Works just like `onMountCallback`, with the same caveats.
 
 ```scala
 div(
@@ -2092,7 +2096,7 @@ In other words, while `Setter` modifiers are idempotent, `Binder` modifiers are 
 
 `onMountBind` solves this problem by remembering the dynamic subscription returned by the binder and permanently killing it on unmount, instead of merely deactivating it. So when the element mounts again, onMountBind callback will run again, but there will be no pre-existing dynamic subscription from the previous mount left. 
 
-So we know why `onMountCallback` fails us technically, but why is it failing us philosophically? Well, Laminar is just doing what we're telling it to do: "Every time this element mounts, create a new click listener and add it to this element". And the reason you're even able to tell this to Laminar is: _what if this was what you actually wanted to do_? What would be a simpler way to express that? I can't think of any without introducing completely arbitrary helpers that are dependent on fleeting fashions on frontend dev.
+So, now we know why `onMountCallback` fails us on a technical level, but why does it have to be that way? Well, Laminar is just doing what we're telling it to do: "Every time this element mounts, create a new click listener and add it to this element". And the reason you're even able to tell this to Laminar is: _what if this was what you actually wanted to do_? What would be a simpler way to express that? I can't think of any, without introducing completely arbitrary helpers that are dependent on fleeting fashions on frontend dev.
 
 And so, `onMountBind` exists as the simplest way to do what it does, and `onMountCallback` as the simplest way to do the other thing.
 
@@ -2122,7 +2126,7 @@ So why does `onMountInsert` need to exist, and why doesn't Laminar allow us to p
 
 `onMountInsert` offers the same deal as `onMountBind` in terms of cancelling the subscription on unmount to prevent a conflict between N `child <-- childStream` modifiers after mounting the element N times. Note that cancelling this subscription does **not** mean that the previously inserted child is removed. If you want that, emit `emptyNode` into childStream while it's still mounted.
 
-But as you might recall Inserters like `child <-- ...` and `children <-- ...` reserve a stable spot in the parent element where they will insert new children. That spot is after the last child of the parent element _at the time of reservation_.
+But as you might recall, Inserters like `child <-- ...` and `children <-- ...` reserve a stable spot in the parent element where they will insert new children. That spot is located after the last child of the parent element _at the time of reservation_.
 
 This would obviously not work inside `onMountBind` – the callback is executed only on mount, so the `child <-- childStream` modifier is added only on mount, and at that point the element already has two child nodes in it: `div(TextNode("Hello, "), TextNode("!"))`. Therefore `child <-- childStream` would have reserved a spot **after** "!", which is not what we want, we obviously want it to reserve the spot where the `onMountInsert` modifier itself is visually located, i.e. between "Hello, " and "!".
 
@@ -2133,13 +2137,19 @@ The `onMountInsert` modifier exists to solve this – it reserves a spot when it
 
 * If you legitimately need to run arbitrary code on mount and/or on unmount, for example to integrate with a third party library.
 
-* If you need your callback to run on mount **but also** to run immediately in case the element is already mounted, use `ReactiveElement.bindFn` / `bindObserver` / etc. methods. Generally you shouldn't need these but they might be useful for integration or extensions. 
+  * Note: If you need your callback to run on mount **but also** to run immediately in case the element is already mounted, use `ReactiveElement.bindFn` / `bindObserver` / etc. methods. Generally you shouldn't need these, but they might be useful for integration or extensions. 
 
 * If you want an `Owner` to _simplify_ some code. For example, if you have a complex component where you don't want to fiddle with ownership everywhere, you can pass a parent's owner to it using `onMountInsert(ctx => makeComponent(ctx.owner)`, but you have to know what you're doing to avoid memory leaks. Read more about Ownership in Laminar and Airstream docs.
 
   * Note: if you want an `Owner` because you're upgrading from Laminar v0.7 where each element was an Owner, this might not be the best way to achieve what you want. We've redesigned the API to reduce the need mess around with owners manually. For example, you can have modifiers like `stream --> observer` now.
 
-* If you just need a reference to `thisNode`, don't use lifecycle hooks, use `inContext`.
+* If you need to decide which binders / inserters to use at mount time. For example, with `onMountInsert` you could switch between `child <-- stream` and `children <-- otherStream` every time the element is mounted.
+
+* If you just need a reference to `thisNode`, **don't** use lifecycle hooks, use `inContext` – it is simpler and more performant.
+
+* If you can get away with `stream --> observer` binding syntax, use that, **don't** bother with lifecycle hooks.
+
+  * Note: Remember you can often use streams like `EventStream.unit()` and `EventStream.delay(100)` if you want the observer to be called "on mount" or 100ms after it's mounted.
 
 
 ### Lifecycle Event Timing
@@ -2218,6 +2228,62 @@ You can see some examples of such interfaces and their usage in [live examples](
 If you review the source code of all these bindings, you'll see that there's no special API for Web Components in Laminar, all we do is define custom attributes / properties / slots / methods that the given Web Component exposes, and use one simple pattern for accessing them in a scoped manner.
 
 
+### Passing Laminar Elements to Third Party Libraries
+
+Some libraries expect you to pass them a DOM element, that they will "render" (attach to their DOM) themselves. For example, a Javascript modal library might expect you to specify the content to render in this way.
+
+```scala
+object JsModalLibrary {
+  def renderModal(element: dom.Element) = ???
+}
+```
+
+All Laminar elements have a `.ref` property that returns the JS DOM node, so it _seems_ as if you can just pass that node to the JS library:
+
+```scala
+val content = div(b("Important"), " message")
+JsModalLibrary.renderModal(content.ref)
+```
+
+However, this only works so long as your `content` Laminar element is static, that is, does not contain any bindings / subscriptions like `<--` and `-->`. A Laminar element's subscriptions only get activated when it is mounted into the DOM (by Laminar), but here we're delegating this mounting responsibility to `JsModalLibrary`, who on its own knows nothing about Laminar's needs.
+
+For such cases, Laminar offers a special `renderDetached` method that lets you manually control the activation and deactivation of subscriptions on a Laminar element:
+
+```scala
+val content = div(
+  b("Important"), " message",
+  button(onClick --> { _ => dom.console.log("click") }, "Log")
+)
+
+val contentRoot: DetachedRoot[Div] = renderDetached(
+  content,
+  activateNow = true
+)
+
+JsModalLibrary.renderModal(contentRoot.ref)
+```
+
+Now, this `contentRoot` detached root is managing the lifecycle of `content` element's subscriptions. We said `activateNow = true`, so the `onClick` subscription will be activated immediately upon creation of the `contentRoot`, and so it will log "click" when the user clicks the button.
+
+There is one last issue to take care of: since we activated the element's subscriptions manually, we also need to deactivate them manually when we don't need the element anymore, otherwise they will never be deactivated and garbage collected. Typically, the Javascript modal library will provide some kind of `onClose` hook, which is exactly what we need. So, our final code could look something like this:
+
+```scala
+val contentRoot: DetachedRoot[Div] = renderDetached(
+  content, // Laminar element
+  activateNow = false // !!! see activation code below
+)
+
+def openModal() {
+  JsModalLibrary.renderModal(
+    contentRoot.ref,
+    onClose = contentRoot.deactivate // !!!
+  )
+  // re-activate subscriptions every time the modal is opened
+  contentRoot.activate()
+}
+```
+
+
 ### Rendering Third Party HTML or SVG Elements
 
 If you want to render a native HTML element (`dom.html.Element`) created a third party library, you can convert it into a Laminar element using `foreignHtmlElement` or `foreignSvgElement`. Once you have that, you can perform all the usual Laminar operations on it:
@@ -2260,6 +2326,70 @@ div(
 You can easily convert any `js.Promise` or `scala.Future` to Airsream observables using `{EventStream,Signal}.{fromJsPromise,fromFuture}` methods, but you can also create a deeper integration with a different observable system – see [Custom Event Sources](https://github.com/raquo/Airstream/#custom-event-sources) in Airstream docs. If you make something useful I encourage you to publish it as a library or at least as a gist. Personally, on the frontend I only use Airstream, so I wouldn't be a good maintainer of such an integration myself.
 
 Integration of observables with callback-driven APIs is usually achieved by providing `observer.onNext` as the callback (e.g. you can pass something like `onclick = clickEventBus.writer.onNext` to React). You might want to check out various Airstream helpers like [EventStream.withJsCallback](https://github.com/raquo/Airstream/#eventstreamwithcallback-and-withobserver) for this.
+
+
+
+## Network Requests
+
+On the frontend, the primary method to make network requests is the [Fetch API](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API). In Laminar, you can use Airstream's [FetchStream](https://github.com/raquo/Airstream/#fetchstream):
+
+```scala
+div(
+  // Make fetch request when this div element is mounted:
+  FetchStream.get(url) --> { responseText => doSomething },
+  // Make fetch request on every click:
+  onClick.flatMap(_ => FetchStream.get(url)) --> { responseText => doSomething },
+  // Same, but also get the click event:
+  onClick.flatMap(ev => FetchStream.get(url).map((ev, _))) --> {
+    case (ev, responseText) => doSomething
+  }
+)
+```
+
+`FetchStream` also supports raw (non-text) responses and codecs – see Airstream docs for their usage.
+
+[AJAX](https://developer.mozilla.org/en-US/docs/Web/Guide/AJAX) (XmlHttpResponse) is an older API for making network requests from the browser. One good reason to use AJAX over Fetch is when you need to track the progress of file uploads – the browsers' Fetch API does not yet provide this functionality. In Laminar you can use AJAX via Airstream's [AjaxStream](https://github.com/raquo/Airstream/#ajax):
+
+```scala
+div(
+  AjaxStream.get("/api/kittens") --> { xhr =>
+    dom.console.log(xhr.responseText)
+  }
+)
+```
+
+[Websockets](https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API) is a browser API that lets you set up a bidirectional communication session between frontend and backend. For example, you would almost certainly use WebSockets to implement a realtime chat app. Airstream itself [does not yet have](https://github.com/raquo/Airstream/issues/49) a canonical websockets implementation, but [Laminext](https://laminext.dev/websocket) does offer a Laminar API for websockets.
+
+
+### Network Requests Security
+
+Please note that browsers have several security mechanisms that dictate whether you're allowed to make certain network requests, and whether you're allowed to see the response content. For security reasons, when your request is blocked, your code often gets only a generic error message with no details (e.g. just "NetworkError when attempting to fetch resource"). This is most typical for cross-origin (cross-domain) requests that violate [CORS](https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS). To solve the problem, you first need to understand CORS, and you will likely need your backend server code to specify a safe CORS policy. The browser dev tools (the network tab and the console) will help too, of course.
+
+Your requests can also be blocked by [CSP](https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP), although for that to be an issue, you need to configure the CSP restrictions on your own backend server, it's usually permissive by default.
+
+Adblockers can also block network requests, image / CSS downloads, and hide DOM elements. You may want to add a popular adblocker extension like uBlock Origin to your dev browser, to avoid surprises in production.
+
+
+### Scala HTTP Libraries
+
+All Scala HTTP libraries that are published for Scala.js use one of the above browser APIs to make network requests when compiled for Scala.js. You don't _need_ to use them to make network requests. If you do want to use those libraries for any reason, you will probably want to convert the `scala.Future`-s that they produce to observables (see Airstream docs for this) to integrate them smoothly into Laminar. Keep in mind that libraries that were designed for the JVM first can significantly increase JS bundle size if they use either heavy Java types or functional effect libraries. You can check the contribution of various classes and packages to your JS bundle size using npm package [source-map-explorer](https://www.npmjs.com/package/source-map-explorer).
+
+
+### Codecs and Type-Safe Requests
+
+Network requests are data-heavy touch points between your code and the outside world. Request data is typically encoded in URL params (for GET requests) and / or as JSON in the request body (for POST requests), and response data is typically encoded as a JSON string. (Of course, you can use MessagePack or any other encoding instead of JSON). Typically, you would use a JSON library like [jsoniter-scala](https://github.com/plokhotnyuk/jsoniter-scala) or [uPickle](https://github.com/com-lihaoyi/upickle) to derive codecs for Scala case classes or GADTs representing requests and responses, and with that, your requests and responses are already pretty type-safe.
+
+However, two important components of safety are missing still:
+
+1. Matching request params / request type to the response type, for a given endpoint
+2. Matching of endpoint URLs and requests / response types in the frontend codebase to those in the backend codebase
+
+You can solve both or those in a DIY manner (often my preference), for example by having a single RPC-style endpoint URL, and defining GADTs for request and response types, however you can also use one of the libraries designed for this purpose, such as [tapir](https://tapir.softwaremill.com/en/latest/) or [endpoints4s](https://endpoints4s.github.io/).
+
+
+### GraphQL
+
+You can use [Caliban](https://ghostdogpr.github.io/caliban/docs/client.html) as a type-safe [GraphQL](https://graphql.org/) client – they have a [Laminar integration](https://ghostdogpr.github.io/caliban/docs/laminext.html) that uses Laminext's WebSockets implementation mentioned above.
 
 
 
@@ -2441,7 +2571,7 @@ This kind of pattern does not work, because Laminar's DOM updates are granular d
 
 ```scala
 div(
-  cls.toggle("active") <-- userSignal.map(_.isActive),
+  cls("active") <-- userSignal.map(_.isActive),
   opacity <-- userSignal.map(if (_.isActive) 1 else 0.5)
 )
 ```
@@ -2545,6 +2675,7 @@ For IE, you will need to shim / polyfill some browser APIs to make use of certai
 Also, the current implementation of `DomApi.unsafeParseHtmlString` method does not support IE. See its scaladoc for an alternative.
 
 
+
 ## Special Cases
 
 Laminar is conceptually a simple layer that brings a lightweight reactive API to native Javascript DOM. In general there is no magic to it, what goes in goes out, transformed in some obvious way. However, in a few cases we do some ugly things under the hood so that you don't need to pull your hair and still do said ugly things in your own code.
@@ -2574,6 +2705,34 @@ However, this is not actually valid HTML. There needs to be a [`tbody`](https://
 Nevertheless, web browsers render this invalid HTML just fine, by silently inserting a `tbody` element to wrap all `tr` elements. This is a problem because the web browser will not notify Laminar about this, so Laminar's DOM tree will become incorrect.
 
 Therefore, if you're rendering a table you must make sure to wrap your `tr` elements in `tbody` (or `thead` or `tfoot`) elements.
+
+
+
+## Troubleshooting
+
+Hiccups are inevitable in development, especially when you're trying a new paradigm (observables and lack of virtual DOM for a React.js developer, or the whole concept of frontend development for a backend developer). Here is some assorted advice for dealing with Laminar issues, in no particular order.
+
+* Understand the separation of concerns between the browser runtime, Scala.js, Laminar, Airstream, Scala DOM Types. For many issues, you just need to understand how to do something on the frontend in plain HTML / JS / CSS, and then it will become obvious how to do it in Scala.js / Laminar. This is actually great news, because there are a ton of resources about plain HTML / JS / CSS online. They are very helpful to us, because Scala.js exposes all the JS APIs almost verbatim, and Laminar itself is a relatively thin layer for manipulating the [DOM](https://developer.mozilla.org/en-US/docs/Web/API/Document_Object_Model/Introduction).
+
+* Especially if you're completely new to frontend development, make sure to manage the scope of uncertainty. Start small, and don't let the sheer scope of things-to-learn demotivate you (reduce that scope / pace your ambitions as necessary). That said, aim to understand all the foundational concepts _eventually_. Once you do, frontend development is pretty easy.
+
+* Review Laminar documentation, including [Airstream docs](https://github.com/raquo/airstream/) and [Scala DOM Types](https://github.com/raquo/scala-dom-types). See the table of contents, and Ctrl+F. Documentation contains both
+
+* Review the content and examples linked on the [resources](https://laminar.dev/resources).
+
+* Search [discord chat](https://discord.gg/JTrUxhq7sj) and [Github issues](https://github.com/search?q=owner%3Araquo+signal+current+value&type=issues) for Laminar, Airstream, and Scala DOM Types, as applicable.
+
+* Don't be afraid to look at Laminar code if needed. It has some complicated areas (e.g. the `children <--` algorithm), but mostly it's very reasonable, with few implicits, no macros, no functional effects, no category theory.
+
+* Use [scribble.ninja](https://scribble.ninja/) to test things out in a clean(ish) context. If stuff works here, but not in your own codebase, now you have a lead, try to reconcile the difference.
+
+* Use the browser dev tools. Always have the dev console open during development, because both Airstream, other libraries, and the browser itself dumps certain types of errors in there.
+
+* Observable/Task/IO-style systems tend to produce complicated stack traces in case of exceptions. Use Airstream's [debugging functionality](https://github.com/raquo/Airstream/#debugging) to diagnose errors that happen within the observable graph.
+
+* Speaking of exceptions, understand Airstream's [error handling](https://github.com/raquo/Airstream/#error-handling), as it is different from other streaming/task/IO libraries.
+
+* Ask for advice on [Discord](https://discord.gg/JTrUxhq7sj). Be specific, show your code, or your desired pseudocode. Try to minimize. Check and report any errors in the console. The act of writing a good question, properly describing the problem, can actually lead you to the solution.
 
 
 

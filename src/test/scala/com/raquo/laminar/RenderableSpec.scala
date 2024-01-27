@@ -74,7 +74,7 @@ class RenderableSpec extends UnitSpec {
 
     def componentsList(idSuffix: String = "") = List(component("List" + idSuffix))
 
-    def componentsVector(idSuffix: String = "") = List(component("Vector" + idSuffix))
+    def componentsVector(idSuffix: String = "") = Vector(component("Vector" + idSuffix))
 
     def componentsBuffer(idSuffix: String = "") = mutable.Buffer(component("Buffer" + idSuffix))
 
@@ -200,7 +200,7 @@ class RenderableSpec extends UnitSpec {
     // - 1 for onMountInsert
     // - 1 for inserter inside onMountInsert
     // - 1 pilot subscription for child element
-    assertEquals(ReactiveElement.numDynamicSubscriptions(el3), 15)
+    assertEquals(ReactiveElement.numDynamicSubscriptions(el3), 14)
   }
 
   it("Regular node rendering") {
@@ -211,7 +211,7 @@ class RenderableSpec extends UnitSpec {
 
     def nodeList(idSuffix: String = "") = List(node("List" + idSuffix))
 
-    def nodeVector(idSuffix: String = "") = List(node("Vector" + idSuffix))
+    def nodeVector(idSuffix: String = "") = Vector(node("Vector" + idSuffix))
 
     def nodeBuffer(idSuffix: String = "") = mutable.Buffer(node("Buffer" + idSuffix))
 
@@ -337,7 +337,7 @@ class RenderableSpec extends UnitSpec {
     // - 1 for onMountInsert
     // - 1 for inserter inside onMountInsert
     // - 1 pilot subscription for child element
-    assertEquals(ReactiveElement.numDynamicSubscriptions(el3), 15)
+    assertEquals(ReactiveElement.numDynamicSubscriptions(el3), 14)
   }
 
   it("RenderableText with child and child.text") {

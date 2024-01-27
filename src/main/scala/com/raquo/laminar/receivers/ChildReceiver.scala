@@ -1,8 +1,11 @@
 package com.raquo.laminar.receivers
 
 import com.raquo.airstream.core.Source
-import com.raquo.laminar.modifiers.{ChildInserter, Inserter, RenderableNode}
+import com.raquo.laminar.inserters.{ChildInserter, DynamicInserter}
+import com.raquo.laminar.modifiers.RenderableNode
 import com.raquo.laminar.nodes.ChildNode
+
+import scala.scalajs.js
 
 object ChildReceiver {
 
@@ -10,14 +13,32 @@ object ChildReceiver {
 
   val text: ChildTextReceiver.type = ChildTextReceiver
 
-  def <--(childSource: Source[ChildNode.Base]): Inserter.Base = {
-    ChildInserter(childSource.toObservable, RenderableNode.nodeRenderable)
+  /** Usage example: child(element) <-- signalOfBoolean */
+  def apply(node: ChildNode.Base): LockedChildReceiver = {
+    new LockedChildReceiver(node)
+  }
+
+  def <--(childSource: Source[ChildNode.Base]): DynamicInserter = {
+    ChildInserter(childSource.toObservable, RenderableNode.nodeRenderable, initialHooks = js.undefined)
   }
 
   implicit class RichChildReceiver(val self: ChildReceiver.type) extends AnyVal {
 
-    def <--[Component](childSource: Source[Component])(implicit renderable: RenderableNode[Component]): Inserter.Base = {
-      ChildInserter(childSource.toObservable, renderable)
+    /** Usage example: child(component) <-- signalOfBoolean */
+    def apply[Component](
+      component: Component
+    )(
+      implicit renderable: RenderableNode[Component]
+    ): LockedChildReceiver = {
+      new LockedChildReceiver(renderable.asNode(component))
+    }
+
+    def <--[Component](
+      childSource: Source[Component]
+    )(
+      implicit renderable: RenderableNode[Component]
+    ): DynamicInserter = {
+      ChildInserter(childSource.toObservable, renderable, initialHooks = js.undefined)
     }
   }
 

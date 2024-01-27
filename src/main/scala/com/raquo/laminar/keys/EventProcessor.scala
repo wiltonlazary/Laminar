@@ -1,7 +1,8 @@
 package com.raquo.laminar.keys
 
 import com.raquo.airstream.core.{EventStream, Observable, Signal, Sink}
-import com.raquo.airstream.flatten.FlattenStrategy
+import com.raquo.airstream.flatten.SwitchingStrategy
+import com.raquo.airstream.status.Status
 import com.raquo.laminar.DomApi
 import com.raquo.laminar.api.UnitArrowsFeature
 import com.raquo.laminar.modifiers.EventListener
@@ -24,6 +25,7 @@ import org.scalajs.dom
 class EventProcessor[Ev <: dom.Event, V](
   protected val eventProp: EventProp[Ev],
   protected val shouldUseCapture: Boolean = false,
+  protected val shouldBePassive: Boolean = false,
   protected val processor: Ev => Option[V]
 ) {
 
@@ -39,24 +41,44 @@ class EventProcessor[Ev <: dom.Event, V](
     new EventListener[Ev, V](this, _ => onNext)
   }
 
-  /** Use capture mode (v=true) or bubble mode (v=false)
+  /** Use capture mode
     *
     * Note that unlike `preventDefault` config which applies to individual events,
     * useCapture is used to install the listener onto the DOM node in the first place.
     *
-    * See `useCapture` docs here: https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/addEventListener
+    * See `useCapture` docs here: https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/addEventListener#usecapture
     */
   def useCapture: EventProcessor[Ev, V] = {
-    new EventProcessor(eventProp, shouldUseCapture = true, processor = processor)
+    new EventProcessor(eventProp, shouldUseCapture = true, shouldBePassive = shouldBePassive, processor = processor)
   }
 
   /** Use standard bubble propagation mode.
     * You don't need to call this unless you set `useCapture` previously, and want to revert to bubbling.
     *
-    * See `useCapture` docs here: https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/addEventListener
+    * See `useCapture` docs here: https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/addEventListener#usecapture
     */
   def useBubbleMode: EventProcessor[Ev, V] = {
-    new EventProcessor(eventProp, shouldUseCapture = false, processor = processor)
+    new EventProcessor(eventProp, shouldUseCapture = false, shouldBePassive = shouldBePassive, processor = processor)
+  }
+
+  /** Use a passive event listener
+   *
+   * Note that unlike `preventDefault` config which applies to individual events,
+   * `passive` is used to install the listener onto the DOM node in the first place.
+   *
+   * See `passive` docs here: https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/addEventListener#passive
+   */
+  def passive: EventProcessor[Ev, V] = {
+    new EventProcessor(eventProp, shouldUseCapture = shouldUseCapture, shouldBePassive = true, processor = processor)
+  }
+
+  /** Use a standard non-passive listener.
+   * You don't need to call this unless you set `passive` previously, and want to revert to non-passive.
+   *
+   * See `passive` docs here: https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/addEventListener#passive
+   */
+  def nonPassive: EventProcessor[Ev, V] = {
+    new EventProcessor(eventProp, shouldUseCapture = shouldUseCapture, shouldBePassive = false, processor = processor)
   }
 
   /** Prevent default browser action for the given event (e.g. following the link when it is clicked)
@@ -114,9 +136,29 @@ class EventProcessor[Ev <: dom.Event, V](
     }
   }
 
-  /** Values that do not pass will not propagate down the chain and into the emitter. */
+  /** Values that do not pass the test will not propagate down the chain and into the emitter. */
   def filter(passes: V => Boolean): EventProcessor[Ev, V] = {
     withNewProcessor(ev => processor(ev).filter(passes))
+  }
+
+  /** Values that pass the test will not propagate down the chain and into the emitter. */
+  def filterNot(skip: V => Boolean): EventProcessor[Ev, V] = filter(!skip(_))
+
+  /** Filter events by `event.target`
+    *
+    * For example, discard clicks on child <a> links with something like:
+    *
+    *     div(
+    *       onClick.filterByTarget {
+    *         case dom.html.Anchor => false
+    *         case _ => true
+    *       } --> observer,
+    *       "A bunch of clickable stuff",
+    *       a("Some link", href("..."))
+    *     )
+    * */
+  def filterByTarget(passes: dom.EventTarget => Boolean): EventProcessor[Ev, V] = {
+    withNewProcessor(ev => if (passes(ev.target)) processor(ev) else None)
   }
 
   def collect[V2](pf: PartialFunction[V, V2]): EventProcessor[Ev, V2] = {
@@ -192,6 +234,24 @@ class EventProcessor[Ev <: dom.Event, V](
     }
   }
 
+  /** Execute a side effecting callback every time the event emits.
+    *
+    * Note: Do not provide a callback that returns a LAZY value such as EventStream,
+    * it will not be started. Use `compose` or `flatMap` methods for that kind of thing.
+    *
+    * Note: You still need to bind this event processor to an observer with
+    * the `-->` method. Generally you should put "side effects" in the observer, but
+    * strictly speaking this is not required, and you can use `--> Observer.empty`.
+    *
+    * Note: This method is called `tapEach` for consistency with Scala collections.
+    */
+  def tapEach[U](f: V => U): EventProcessor[Ev, V] = map { v => f(v); v }
+
+  /** Like [[tapEach]] but provides the original event instead of the processed value. */
+  def tapEachEvent[U](f: Ev => U): EventProcessor[Ev, V] = {
+    withNewProcessor { ev => f(ev); processor(ev) }
+  }
+
   /** Similar to the Airstream `compose` operator.
     *
     * Use this when you need to apply stream operators on this element's events, e.g.:
@@ -200,7 +260,14 @@ class EventProcessor[Ev <: dom.Event, V](
     *
     *     a(onClick.preventDefault.compose(_.delay(100)) --> observer)
     *
+    * Note: can also use with more compact `apply` alias:
+    *
+    *     div(onScroll(_.throttle(100)) --> observer)
+    *
+    *     a(onClick.preventDefault(_.delay(100)) --> observer)
+    *
     * Note: This method is not chainable. Put all the operations you need inside the `operator` callback.
+    *
     */
   def compose[Out](
     operator: EventStream[V] => Observable[Out]
@@ -208,14 +275,24 @@ class EventProcessor[Ev <: dom.Event, V](
     new LockedEventKey(this, operator)
   }
 
+  /** Alias for [[compose]] */
+  @inline def apply[Out](
+    composer: EventStream[V] => Observable[Out]
+  ): LockedEventKey[Ev, V, Out] = {
+    compose(composer)
+  }
+
   /** Similar to the Airstream `flatMap` operator.
     *
     * Use this when you want to create a new stream or signal on every event, e.g.:
     *
+    * {{{
     * button(onClick.preventDefault.flatMap(_ => makeAjaxRequest()) --> observer)
+    * }}}
     *
     * #TODO[IDE] IntelliJ (2022.3.2) shows false errors when using this flatMap implementation,
     *  at least with Scala 2, making it annoying. Use flatMapStream or flatMapSignal to get around that.
+    *  https://youtrack.jetbrains.com/issue/SCL-21836/Kind-context-bound-callback-argument-causes-false-positive-type-mismatch-error
     *
     * Note: This method is not chainable. Put all the operations you need inside the `operator` callback,
     *       or use the `compose` method instead for more flexibility
@@ -223,27 +300,78 @@ class EventProcessor[Ev <: dom.Event, V](
   def flatMap[Out, Obs[_] <: Observable[_]](
     operator: V => Obs[Out]
   )(
-    implicit flattenStrategy: FlattenStrategy[EventStream, Obs, Observable]
+    implicit strategy: SwitchingStrategy[EventStream, Obs, Observable]
   ): LockedEventKey[Ev, V, Out] = {
-    new LockedEventKey[Ev, V, Out](this, eventStream => eventStream.flatMap(operator)(flattenStrategy))
+    new LockedEventKey[Ev, V, Out](
+      this,
+      eventStream => eventStream.flatMapSwitch(operator)(strategy)
+    )
+  }
+
+  /** Equivalent to `flatMap(_ => observable)`
+    *
+    * Note: `observable` will be re-evaluated every time the event is fired.
+    */
+  @inline def flatMapTo[Out, Obs[_] <: Observable[_]](
+    observable: => Obs[Out]
+  )(
+    implicit strategy: SwitchingStrategy[EventStream, Obs, Observable]
+  ): LockedEventKey[Ev, V, Out] = {
+    flatMap(_ => observable)(strategy)
   }
 
   /** Similar to `flatMap`, but restricted to streams only. */
-  def flatMapStream[Out](
+  @inline def flatMapStream[Out](
     operator: V => EventStream[Out]
   )(
-    implicit flattenStrategy: FlattenStrategy[EventStream, EventStream, Observable]
+    implicit strategy: SwitchingStrategy[EventStream, EventStream, Observable]
   ): LockedEventKey[Ev, V, Out] = {
-    flatMap(operator)(flattenStrategy)
+    flatMap(operator)(strategy)
   }
 
   /** Similar to `flatMap`, but restricted to signals only. */
-  def flatMapSignal[Out](
+  @inline def flatMapSignal[Out](
     operator: V => Signal[Out]
   )(
-    implicit flattenStrategy: FlattenStrategy[EventStream, Signal, Observable]
+    implicit strategy: SwitchingStrategy[EventStream, Signal, Observable]
   ): LockedEventKey[Ev, V, Out] = {
-    flatMap(operator)(flattenStrategy)
+    flatMap(operator)(strategy)
+  }
+
+  /** Similar to Airstream `flatMapWithStatus` operator.
+    *
+    * Use this when you want to flatMapSwitch and get a status indicating
+    * whether the input has been processed by the inner stream, e.g.:
+    *
+    * {{{
+    * button(onClick.flatMapWithStatus(ev => AjaxStream.get(ev, ...)) --> observer
+    * }}}
+    */
+  def flatMapWithStatus[Out](
+    operator: V => EventStream[Out]
+  ): LockedEventKey[Ev, V, Status[V, Out]] = {
+    new LockedEventKey[Ev, V, Status[V, Out]](
+      this,
+      eventStream => eventStream.flatMapWithStatus(operator)
+    )
+  }
+
+  /** Similar to Airstream `flatMapWithStatus` operator.
+    *
+    * Use this when you want to flatMapSwitch and get a status indicating
+    * whether the input has been processed by the inner stream, e.g.:
+    *
+    * {{{
+    * button(onClick.flatMapWithStatus(AjaxStream.get(...)) --> observer
+    * }}}
+    */
+  def flatMapWithStatus[Out](
+    innerStream: => EventStream[Out]
+  ): LockedEventKey[Ev, V, Status[V, Out]] = {
+    new LockedEventKey[Ev, V, Status[V, Out]](
+      this,
+      eventStream => eventStream.flatMapWithStatus(innerStream)
+    )
   }
 
   /** Evaluate `f` if the value was filtered out up the chain. For example:
@@ -337,14 +465,14 @@ class EventProcessor[Ev <: dom.Event, V](
   }
 
   private def withNewProcessor[V2](newProcessor: Ev => Option[V2]): EventProcessor[Ev, V2] = {
-    new EventProcessor[Ev, V2](eventProp, shouldUseCapture, newProcessor)
+    new EventProcessor[Ev, V2](eventProp, shouldUseCapture, shouldBePassive, newProcessor)
   }
 }
 
 object EventProcessor {
 
-  def empty[Ev <: dom.Event](eventProp: EventProp[Ev], shouldUseCapture: Boolean = false): EventProcessor[Ev, Ev] = {
-    new EventProcessor(eventProp, shouldUseCapture, Some(_))
+  def empty[Ev <: dom.Event](eventProp: EventProp[Ev], shouldUseCapture: Boolean = false, shouldBePassive: Boolean = false): EventProcessor[Ev, Ev] = {
+    new EventProcessor(eventProp, shouldUseCapture, shouldBePassive, Some(_))
   }
 
   // These methods are only exposed publicly via companion object
@@ -353,6 +481,8 @@ object EventProcessor {
   @inline def eventProp[Ev <: dom.Event](prop: EventProcessor[Ev, _]): EventProp[Ev] = prop.eventProp
 
   @inline def shouldUseCapture(prop: EventProcessor[_, _]): Boolean = prop.shouldUseCapture
+
+  @inline def shouldBePassive(prop: EventProcessor[_, _]): Boolean = prop.shouldBePassive
 
   @inline def processor[Ev <: dom.Event, Out](prop: EventProcessor[Ev, Out]): Ev => Option[Out] = prop.processor
 }

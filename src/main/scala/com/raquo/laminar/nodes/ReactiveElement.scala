@@ -2,9 +2,9 @@ package com.raquo.laminar.nodes
 
 import com.raquo.airstream.core.{EventStream, Observable, Observer, Sink, Transaction}
 import com.raquo.airstream.eventbus.{EventBus, WriteBus}
-import com.raquo.airstream.ownership.{DynamicSubscription, Subscription, TransferableSubscription}
+import com.raquo.airstream.ownership.{DynamicOwner, DynamicSubscription, Subscription, TransferableSubscription}
 import com.raquo.ew.JsArray
-import com.raquo.laminar.keys.{CompositeKey, EventProcessor}
+import com.raquo.laminar.keys.{CompositeKey, EventProcessor, Key}
 import com.raquo.laminar.lifecycle.MountContext
 import com.raquo.laminar.modifiers.{EventListener, Modifier}
 import com.raquo.laminar.tags.Tag
@@ -178,6 +178,8 @@ trait ReactiveElement[+Ref <: dom.Element]
     this
   }
 
+  private[laminar] def onBoundKeyUpdater(key: Key): Unit
+
   override private[nodes] def willSetParent(maybeNextParent: Option[ParentNode.Base]): Unit = {
     //println(s"> willSetParent of ${this.ref.tagName} to ${maybeNextParent.map(_.ref.tagName)}")
 
@@ -210,12 +212,14 @@ trait ReactiveElement[+Ref <: dom.Element]
   }
 
   private[this] def setPilotSubscriptionOwner(maybeNextParent: Option[ParentNode.Base]): Unit = {
-    //println(" - setPilotSubscriptionOwner of " + this + " (active = " + dynamicOwner.isActive + ") to " + maybeNextParent)
+    unsafeSetPilotSubscriptionOwner(maybeNextParent.map(_.dynamicOwner))
+  }
 
+  protected[this] def unsafeSetPilotSubscriptionOwner(maybeNextOwner: Option[DynamicOwner]): Unit = {
     // @Warning[Fragile] I had issues with clearOwner requiring a hasOwner check but that should not be necessary anymore.
     //  - If exceptions crop up caused by this, need to find the root cause before rushing to patch this here.
-    maybeNextParent.fold(pilotSubscription.clearOwner()) { nextParent =>
-      pilotSubscription.setOwner(nextParent.dynamicOwner)
+    maybeNextOwner.fold(pilotSubscription.clearOwner()) { nextOwner =>
+      pilotSubscription.setOwner(nextOwner)
     }
   }
 }

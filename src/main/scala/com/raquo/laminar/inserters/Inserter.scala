@@ -1,8 +1,39 @@
-package com.raquo.laminar.modifiers
+package com.raquo.laminar.inserters
 
 import com.raquo.airstream.ownership.{DynamicSubscription, Owner, Subscription}
-import com.raquo.laminar.lifecycle.InsertContext
+import com.raquo.laminar.modifiers.Modifier
 import com.raquo.laminar.nodes.ReactiveElement
+
+import scala.scalajs.js
+
+/** Inserter is a class that can insert child nodes into [[InsertContext]].
+  *
+  * This is needed in `onMountInsert`, or when rendering dynamic children
+  * with `child <-- ...`, `children <-- ...`, etc.
+  *
+  * If you don't have a [[InsertContext]], you can render the Inserter
+  * just by calling its `apply` method. It will work the same way as
+  * rendering any other child node, static or dynamic, would.
+  *
+  * So, you can use [[Inserter]] essentially as (an implicit-powered)
+  * sypertype of regular laminar elements and dynamic inserters like
+  * `children <-- ...`. We use it this way in `onMountInsert`, for example.
+  */
+sealed trait Inserter extends Modifier[ReactiveElement.Base]
+
+trait Hookable[+Self <: Inserter] { this: Inserter =>
+
+  /** Create a copy of the inserter that will apply these
+    * additional hooks after the original inserter's hooks.
+    */
+  def withHooks(addHooks: InserterHooks): Self
+}
+
+trait StaticInserter extends Inserter {
+
+  def renderInContext(ctx: InsertContext): Unit
+}
+
 
 // @TODO[API] Inserter really wants to extend Binder. And yet.
 
@@ -16,13 +47,14 @@ import com.raquo.laminar.nodes.ReactiveElement
   * Note: If you DO provide initialContext, its parentNode MUST always
   * be the same `element` that you apply this Modifier to.
   */
-class Inserter[-El <: ReactiveElement.Base] (
-  initialContext: Option[InsertContext[El]] = None,
+class DynamicInserter(
+  initialContext: Option[InsertContext] = None,
   preferStrictMode: Boolean,
-  insertFn: (InsertContext[El], Owner) => Subscription,
-) extends Modifier[El] {
+  insertFn: (InsertContext, Owner, js.UndefOr[InserterHooks]) => Subscription,
+  hooks: js.UndefOr[InserterHooks] = js.undefined
+) extends Inserter with Hookable[DynamicInserter] {
 
-  def bind(element: El): DynamicSubscription = {
+  def bind(element: ReactiveElement.Base): DynamicSubscription = {
     // @TODO[Performance] The way it's used in `onMountInsert`, we create a DynSub inside DynSub.
     //  - Currently this does not seem avoidable as we don't want to expose a `map` on DynSub
     //  - That would allow you to create leaky resources without having a reference to the owner
@@ -32,15 +64,22 @@ class Inserter[-El <: ReactiveElement.Base] (
     //  because it would match the state of the DOM upon reactivation
     //  (unless some of the managed child elements were externally removed from the DOM,
     //  which Laminar should be able to recover from).
-    val insertContext = initialContext.getOrElse(InsertContext.reserveSpotContext(element, strictMode = preferStrictMode))
+    val insertContext = initialContext.getOrElse(
+      InsertContext.reserveSpotContext(element, strictMode = preferStrictMode, hooks)
+    )
 
     ReactiveElement.bindSubscriptionUnsafe(element) { mountContext =>
-      insertFn(insertContext, mountContext.owner)
+      insertFn(insertContext, mountContext.owner, hooks)
     }
   }
 
-  override def apply(element: El): Unit = {
+  override def apply(element: ReactiveElement.Base): Unit = {
     bind(element)
+  }
+
+  override def withHooks(addHooks: InserterHooks): DynamicInserter = {
+    val newHooks = addHooks.appendTo(hooks)
+    new DynamicInserter(initialContext, preferStrictMode, insertFn, newHooks)
   }
 
   /** Call this to get a copy of Inserter with a context locked to a certain element.
@@ -49,13 +88,8 @@ class Inserter[-El <: ReactiveElement.Base] (
     *
     * The arrangement is admittedly a bit weird, but is required to build a smooth end user API.
     */
-  def withContext(context: InsertContext[El]): Inserter[El] = {
+  def withContext(context: InsertContext): DynamicInserter = {
     // Note: preferStrictMode has no effect here, because initial context is defined.
-    new Inserter[El](Some(context), preferStrictMode = false, insertFn)
+    new DynamicInserter(Some(context), preferStrictMode = false, insertFn, hooks)
   }
-}
-
-object Inserter {
-
-  type Base = Inserter[ReactiveElement.Base]
 }

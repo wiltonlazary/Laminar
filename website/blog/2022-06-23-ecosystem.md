@@ -1,14 +1,14 @@
 ---
 title: 2022 Laminar Ecosystem Updates
 author: Nikita
-authorURL: http://twitter.com/raquo
+authorURL: https://twitter.com/raquo
 ---
 
 Here is a deluge of new libraries, web components, tutorials, sponsors – all the news that couldn't wait until the next Laminar release. Hope I didn't miss anything!
 
 <!--truncate-->
 
-> Laminar is a native Scala.js library for building web application interfaces. Learn more in [a few short examples](https://laminar.dev/examples/hello-world) or [one long video](https://www.youtube.com/watch?v=L_AHCkl6L-Q).
+> Laminar is a native Scala.js library for building web application interfaces. Learn more in [a few short examples](https://demo.laminar.dev) or [one long video](https://www.youtube.com/watch?v=L_AHCkl6L-Q).
 
 
 

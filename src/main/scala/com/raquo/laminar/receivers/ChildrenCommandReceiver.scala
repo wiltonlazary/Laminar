@@ -1,8 +1,10 @@
 package com.raquo.laminar.receivers
 
 import com.raquo.airstream.core.Source.EventSource
-import com.raquo.laminar.CollectionCommand
-import com.raquo.laminar.modifiers.{ChildrenCommandInserter, Inserter, RenderableNode}
+import com.raquo.laminar.inserters.{ChildrenCommandInserter, CollectionCommand, DynamicInserter}
+import com.raquo.laminar.modifiers.RenderableNode
+
+import scala.scalajs.js
 
 object ChildrenCommandReceiver {
 
@@ -10,7 +12,7 @@ object ChildrenCommandReceiver {
     commands: EventSource[CollectionCommand[Component]]
   )(
     implicit renderableNode: RenderableNode[Component]
-  ): Inserter.Base = {
-    ChildrenCommandInserter(commands.toObservable, renderableNode)
+  ): DynamicInserter = {
+    ChildrenCommandInserter(commands.toObservable, renderableNode, initialHooks = js.undefined)
   }
 }

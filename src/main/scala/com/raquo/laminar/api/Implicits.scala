@@ -1,18 +1,15 @@
-package com.raquo.laminar
+package com.raquo.laminar.api
 
 import com.raquo.airstream.core.{Sink, Source}
-import com.raquo.airstream.state.Val
 import com.raquo.ew
 import com.raquo.ew.ewArray
-import com.raquo.laminar.Implicits.RichSource
-import com.raquo.laminar.api.L.{StyleEncoder, child, children}
-import com.raquo.laminar.api.UnitArrowsFeature
+import com.raquo.laminar.api.Implicits.RichSource
+import com.raquo.laminar.api.StyleUnitsApi.StyleEncoder
+import com.raquo.laminar.inserters.{StaticChildInserter, StaticChildrenInserter, StaticInserter, StaticTextInserter}
 import com.raquo.laminar.keys.CompositeKey.CompositeValueMappers
 import com.raquo.laminar.keys.{DerivedStyleProp, EventProcessor, EventProp}
-import com.raquo.laminar.modifiers.{Binder, Inserter, Modifier, RenderableNode, RenderableText, Setter}
+import com.raquo.laminar.modifiers.{Binder, Modifier, RenderableNode, RenderableText, Setter}
 import com.raquo.laminar.nodes.{ChildNode, ReactiveElement, TextNode}
-import com.raquo.laminar.receivers.ChildOptionReceiver.RichChildOptionReceiver
-import com.raquo.laminar.receivers.ChildReceiver.RichChildReceiver
 import org.scalajs.dom
 
 import scala.scalajs.js
@@ -24,17 +21,23 @@ trait Implicits extends Implicits.LowPriorityImplicits with CompositeValueMapper
     new RichSource(source)
   }
 
+
+  // -- CSS Styles --
+
   /** Allow both Int-s and Double-s in numeric style props */
-  @inline implicit def derivedStyleIntToDouble[V](style: DerivedStyleProp[Int]): DerivedStyleProp[Double] = {
+  @inline implicit def derivedStyleIntToDouble(style: DerivedStyleProp[Int]): DerivedStyleProp[Double] = {
     // Safe because Int-s and Double-s have identical runtime representation in Scala.js
     style.asInstanceOf[DerivedStyleProp[Double]]
   }
 
   /** Allow both Int-s and Double-s in numeric style props */
-  @inline implicit def styleEncoderIntToDouble[V](encoder: StyleEncoder[Int]): StyleEncoder[Double] = {
+  @inline implicit def styleEncoderIntToDouble(encoder: StyleEncoder[Int]): StyleEncoder[Double] = {
     // Safe because Int-s and Double-s have identical runtime representation in Scala.js
     encoder.asInstanceOf[StyleEncoder[Double]]
   }
+
+
+  // -- Basic laminar syntax --
 
   /** Add [[EventProcessor]] methods (mapToValue / filter / preventDefault / etc.) to event props (e.g. onClick) */
   @inline implicit def eventPropToProcessor[Ev <: dom.Event](eventProp: EventProp[Ev]): EventProcessor[Ev, Ev] = {
@@ -42,14 +45,15 @@ trait Implicits extends Implicits.LowPriorityImplicits with CompositeValueMapper
   }
 
   /** Convert primitive renderable values (strings, numbers, booleans, etc.) to text nodes */
-  implicit def textToTextNode[A](value: A)(implicit renderable: RenderableText[A]): TextNode = {
-    new TextNode(renderable.asString(value))
+  implicit def textToTextNode[A](value: A)(implicit r: RenderableText[A]): TextNode = {
+    new TextNode(r.asString(value))
   }
 
   /** Convert a custom component to Laminar DOM node */
-  implicit def componentToNode[A](component: A)(implicit renderable: RenderableNode[A]): ChildNode.Base = {
-    renderable.asNode(component)
+  implicit def componentToNode[A](component: A)(implicit r: RenderableNode[A]): ChildNode.Base = {
+    r.asNode(component)
   }
+
 
   // -- Methods to convert collections of Setter[El] to a single Setter[El] --
 
@@ -68,6 +72,11 @@ trait Implicits extends Implicits.LowPriorityImplicits with CompositeValueMapper
     Setter(element => setters.foreach(_.apply(element)))
   }
 
+  /** Combine an ew.JsVector of [[Setter]]-s into a single [[Setter]] that applies them all. */
+  implicit def jsVectorToSetter[El <: ReactiveElement.Base](setters: ew.JsVector[Setter[El]]): Setter[El] = {
+    Setter(element => setters.forEach(_.apply(element)))
+  }
+
   /** Combine an ew.JsArray of [[Setter]]-s into a single [[Setter]] that applies them all. */
   implicit def jsArrayToSetter[El <: ReactiveElement.Base](setters: ew.JsArray[Setter[El]]): Setter[El] = {
     Setter(element => setters.forEach(_.apply(element)))
@@ -83,6 +92,7 @@ trait Implicits extends Implicits.LowPriorityImplicits with CompositeValueMapper
   //implicit def seqToBinder[El <: ReactiveElement.Base](binders: collection.Seq[Binder[El]]): Binder[El] = {
   //  Binder[El] { ??? }
   //}
+
 
   // -- Methods to convert collections of Modifier[El]-like things to Modifier[El] --
 
@@ -111,6 +121,15 @@ trait Implicits extends Implicits.LowPriorityImplicits with CompositeValueMapper
     implicit asModifier: A => Modifier[El]
   ): Modifier[El] = {
     Modifier(element => modifiers.foreach(asModifier(_).apply(element)))
+  }
+
+  /** Create a modifier that applies each of the modifiers in an array */
+  implicit def jsVectorToModifier[A, El <: ReactiveElement.Base](
+    modifiers: ew.JsVector[A]
+  )(
+    implicit asModifier: A => Modifier[El]
+  ): Modifier[El] = {
+    Modifier(element => modifiers.forEach(asModifier(_).apply(element)))
   }
 
   /** Create a modifier that applies each of the modifiers in an array */
@@ -149,6 +168,10 @@ trait Implicits extends Implicits.LowPriorityImplicits with CompositeValueMapper
     Modifier(element => nodes.foreach(_.apply(element)))
   }
 
+  implicit def nodeJsVectorToModifier[N <: ChildNode.Base](nodes: ew.JsVector[N]): Modifier.Base = {
+    Modifier(element => nodes.forEach(_.apply(element)))
+  }
+
   implicit def nodeJsArrayToModifier[N <: ChildNode.Base](nodes: ew.JsArray[N]): Modifier.Base = {
     Modifier(element => nodes.forEach(_.apply(element)))
   }
@@ -178,74 +201,82 @@ object Implicits {
 
   }
 
+
   /** Implicit conversions from X to Inserter are primarily needed for
-    * convenience in `onMountInsert`, but they are an expensive overkill
-    * in other contexts where converting all these types to regular
-    * Modifiers is cheaper and just as functional, so the conversions
+    * `onMountInsert`, but they are relatively expensive compared to simpler
+    * alternatives when a mere Modifier would suffice. And so, the conversions
     * below are de-prioritized.
     */
   trait LowPriorityImplicits {
 
     // -- Methods to convert individual values / nodes / components to inserters --
 
-    implicit def textToInserter[A](value: A)(implicit renderable: RenderableText[A]): Inserter.Base = {
-      child.text <-- Val(value)
+    implicit def textToInserter[A](value: A)(implicit r: RenderableText[A]): StaticInserter = {
+      if (r == RenderableText.textNodeRenderable) {
+        StaticChildInserter.noHooks(value.asInstanceOf[TextNode])
+      } else {
+        new StaticTextInserter(r.asString(value))
+      }
     }
 
-    implicit def nodeToInserter(node: ChildNode.Base): Inserter.Base = {
-      child <-- Val(node)
+    implicit def nodeToInserter(node: ChildNode.Base): StaticChildInserter = {
+      StaticChildInserter.noHooks(node)
     }
 
-    implicit def componentToInserter[Component](component: Component)(implicit renderable: RenderableNode[Component]): Inserter.Base = {
-      // #TODO[Scala3] this could be simply `child <-- Val(component)`, but inside this
-      //  particular method, Scala 3 fails to compile that pattern for some reason. WHY
-      new RichChildReceiver(child) <-- Val(component)
+    implicit def componentToInserter[Component: RenderableNode](component: Component): StaticChildInserter = {
+      StaticChildInserter.noHooksC(component)
     }
 
     // -- Methods to convert collections of nodes to inserters --
 
-    implicit def nodeOptionToInserter(maybeNode: Option[ChildNode.Base]): Inserter.Base = {
-      child.maybe <-- Val(maybeNode)
+    implicit def nodeOptionToInserter(maybeNode: Option[ChildNode.Base]): StaticChildrenInserter = {
+      StaticChildrenInserter.noHooks(maybeNode.toSeq)
     }
 
-    implicit def nodeSeqToInserter(nodes: collection.Seq[ChildNode.Base]): Inserter.Base = {
-      children <-- Val(nodes.toList)
+    implicit def nodeSeqToInserter(nodes: collection.Seq[ChildNode.Base]): StaticChildrenInserter = {
+      StaticChildrenInserter.noHooks(nodes)
     }
 
-    implicit def nodeArrayToInserter(nodes: scala.Array[ChildNode.Base]): Inserter.Base = {
-      children <-- Val(nodes.toList)
+    implicit def nodeArrayToInserter(nodes: scala.Array[ChildNode.Base]): StaticChildrenInserter = {
+      StaticChildrenInserter.noHooks(nodes)
     }
-    
-    implicit def nodeJsArrayToInserter[N <: ChildNode.Base](nodes: ew.JsArray[N]): Inserter.Base = {
-      children <-- Val(nodes.asScalaJs.toList)
+
+    implicit def nodeJsVectorToInserter[N <: ChildNode.Base](nodes: ew.JsVector[N]): StaticChildrenInserter = {
+      StaticChildrenInserter.noHooks(nodes.toList)
     }
-    
-    implicit def nodeSjsArrayToInserter[N <: ChildNode.Base](nodes: js.Array[N]): Inserter.Base = {
-      children <-- Val(nodes.toList)
+
+    implicit def nodeJsArrayToInserter[N <: ChildNode.Base](nodes: ew.JsArray[N]): StaticChildrenInserter = {
+      StaticChildrenInserter.noHooks(nodes.asScalaJs.toList)
+    }
+
+    implicit def nodeSjsArrayToInserter[N <: ChildNode.Base](nodes: js.Array[N]): StaticChildrenInserter = {
+      StaticChildrenInserter.noHooks(nodes.toList)
     }
 
     // -- Methods to convert collections of components to inserters --
-    
-    implicit def componentOptionToInserter[Component: RenderableNode](maybeComponent: Option[Component]): Inserter.Base = {
-      // #TODO[Scala3] this could be simply `child.maybe <-- Val(maybeComponent)`, but inside this
-      //  particular method, Scala 3 fails to compile that pattern for some reason. WHY
-      new RichChildOptionReceiver(child.maybe) <-- Val(maybeComponent)
+
+    implicit def componentOptionToInserter[Component: RenderableNode](maybeComponent: Option[Component]): StaticChildrenInserter = {
+      StaticChildrenInserter.noHooksC(maybeComponent.toList)
     }
 
-    implicit def componentSeqToInserter[Component: RenderableNode](components: collection.Seq[Component]): Inserter.Base = {
-      children <-- Val(components.toList)
+    implicit def componentSeqToInserter[Component: RenderableNode](components: collection.Seq[Component]): StaticChildrenInserter = {
+      StaticChildrenInserter.noHooksC(components.toList)
     }
 
-    implicit def componentArrayToInserter[Component: RenderableNode](components: scala.Array[Component]): Inserter.Base = {
-      children <-- Val(components.toList)
+    implicit def componentArrayToInserter[Component: RenderableNode](components: scala.Array[Component]): StaticChildrenInserter = {
+      StaticChildrenInserter.noHooksC(components.toList)
     }
 
-    implicit def componentJsArrayToInserter[Component: RenderableNode](components: ew.JsArray[Component]): Inserter.Base = {
-      children <-- Val(components.asScalaJs.toList)
+    implicit def componentJsVectorToInserter[Component: RenderableNode](components: ew.JsVector[Component]): StaticChildrenInserter = {
+      StaticChildrenInserter.noHooksC(components.toList)
     }
 
-    implicit def componentSjsArrayToInserter[Component: RenderableNode](components: js.Array[Component]): Inserter.Base = {
-      children <-- Val(components.toList)
+    implicit def componentJsArrayToInserter[Component: RenderableNode](components: ew.JsArray[Component]): StaticChildrenInserter = {
+      StaticChildrenInserter.noHooksC(components.asScalaJs.toList)
+    }
+
+    implicit def componentSjsArrayToInserter[Component: RenderableNode](components: js.Array[Component]): StaticChildrenInserter = {
+      StaticChildrenInserter.noHooksC(components.toList)
     }
 
   }

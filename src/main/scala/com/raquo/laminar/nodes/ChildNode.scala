@@ -36,7 +36,7 @@ trait ChildNode[+Ref <: dom.Node]
   @inline private[nodes] def willSetParent(maybeNextParent: Option[ParentNode.Base]): Unit = ()
 
   override def apply(parentNode: ReactiveElement.Base): Unit = {
-    ParentNode.appendChild(parent = parentNode, child = this)
+    ParentNode.appendChild(parent = parentNode, child = this, hooks = js.undefined)
   }
 
 }
@@ -45,27 +45,10 @@ object ChildNode {
 
   type Base = ChildNode[dom.Node]
 
-  @inline def isNodeMounted(node: dom.Node): Boolean = {
-    isDescendantOf(node = node, ancestor = dom.document)
-  }
-
-  @tailrec final def isDescendantOf(node: dom.Node, ancestor: dom.Node): Boolean = {
-    // @TODO[Performance] Maybe use https://developer.mozilla.org/en-US/docs/Web/API/Node/contains instead (but IE only supports it for Elements)
-    // For children of shadow roots, parentNode is null, but the host property contains a reference to the shadow root
-    val effectiveParentNode = if (node.parentNode != null) {
-      node.parentNode
-    } else {
-      val maybeShadowHost = node.asInstanceOf[js.Dynamic].selectDynamic("host").asInstanceOf[js.UndefOr[dom.Node]]
-      maybeShadowHost.orNull
-    }
-    effectiveParentNode match {
-      case null => false
-      case `ancestor` => true
-      case intermediateParent => isDescendantOf(intermediateParent, ancestor)
-    }
-  }
-
-  @tailrec final def isDescendantOf[N, BaseRef](
+  /** Note: This walks up Laminar's element tree, not the real DOM tree.
+    * See [[com.raquo.laminar.DomApi.isDescendantOf]] if you want to check the real DOM tree.
+    */
+  @tailrec final def isDescendantOf(
     child: ChildNode.Base,
     parent: ParentNode.Base
   ): Boolean = {

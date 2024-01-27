@@ -96,11 +96,11 @@ class SignalChangesPullSpec extends UnitSpec {
     mount(el)
 
     log.toList shouldBe List(
-      "xxx: x",
       "-2 isPositive = false",
       "-2 isEven = true",
       "combined-init-1: -2 isPositive = false, isEven = true",
-      "combined-init-2: -2 isPositive = false, isEven = true"
+      "combined-init-2: -2 isPositive = false, isEven = true",
+      "xxx: x",
     )
     log.clear()
 
@@ -412,7 +412,7 @@ class SignalChangesPullSpec extends UnitSpec {
     v.set(3)
 
     // Using the seqToModifier implicit conversion
-    val combinedMod: Modifier[ReactiveElement.Base] = List(
+    val combinedMod: Modifier.Base = List(
       combined --> _logCombined(log, "combined-amend-1"),
       combined --> _logCombined(log, "combined-amend-2"),
     )

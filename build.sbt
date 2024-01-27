@@ -85,6 +85,11 @@ lazy val laminar = project.in(file("."))
       "org.scalatest" %%% "scalatest" % Versions.ScalaTest % Test,
     ),
 
+    scalacOptions ++= Seq(
+      "-feature",
+      "-language:implicitConversions,higherKinds,existentials",
+    ),
+
     scalacOptions ~= { options: Seq[String] =>
       options.filterNot(Set(
         "-Ywarn-value-discard",
@@ -92,8 +97,8 @@ lazy val laminar = project.in(file("."))
       ))
     },
 
-    scalacOptions += {
-      val localSourcesPath = baseDirectory.value.toURI
+    scalacOptions ++= sys.env.get("CI").map { _ =>
+      val localSourcesPath = (LocalRootProject / baseDirectory).value.toURI
       val remoteSourcesPath = s"https://raw.githubusercontent.com/raquo/Laminar/${git.gitHeadCommit.value.get}/"
       val sourcesOptionName = if (scalaVersion.value.startsWith("2.")) "-P:scalajs:mapSourceURI" else "-scalajs-mapSourceURI"
 

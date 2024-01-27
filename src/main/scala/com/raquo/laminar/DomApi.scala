@@ -4,93 +4,143 @@ import com.raquo.ew._
 import com.raquo.laminar.api.L.svg
 import com.raquo.laminar.keys.{AriaAttr, EventProcessor, HtmlAttr, HtmlProp, StyleProp, SvgAttr}
 import com.raquo.laminar.modifiers.EventListener
-import com.raquo.laminar.nodes.{ChildNode, CommentNode, ParentNode, ReactiveElement, ReactiveHtmlElement, ReactiveSvgElement, TextNode}
+import com.raquo.laminar.nodes.{CommentNode, ReactiveElement, ReactiveHtmlElement, ReactiveSvgElement, TextNode}
 import com.raquo.laminar.tags.{HtmlTag, SvgTag, Tag}
 import org.scalajs.dom
-import org.scalajs.dom.DOMException
 
 import scala.annotation.tailrec
 import scala.scalajs.js
 import scala.scalajs.js.{JavaScriptException, |}
 
+/** Low level DOM APIs used by Laminar.
+  *
+  * End users: Do not call any mutator methods here on Laminar-managed elements,
+  * these methods do not make the necessary updates to Laminar internal state.
+  * Instead, use regular Laminar API, or, if you must, the methods from
+  * [[com.raquo.laminar.nodes.ParentNode]]
+  */
 object DomApi {
 
-  /** Tree functions */
+  /* Tree update functions */
 
   def appendChild(
-    parent: ParentNode.Base,
-    child: ChildNode.Base
+    parent: dom.Node,
+    child: dom.Node
   ): Boolean = {
     try {
-      parent.ref.appendChild(child.ref)
+      parent.appendChild(child)
       true
     } catch {
       // @TODO[Integrity] Does this only catch DOM exceptions? (here and in other methods)
-      case JavaScriptException(_: DOMException) => false
+      case JavaScriptException(_: dom.DOMException) => false
     }
   }
 
   def removeChild(
-    parent: ParentNode.Base,
-    child: ChildNode.Base
+    parent: dom.Node,
+    child: dom.Node
   ): Boolean = {
     try {
-      parent.ref.removeChild(child.ref)
+      parent.removeChild(child)
       true
     } catch {
-      case JavaScriptException(_: DOMException) => false
+      case JavaScriptException(_: dom.DOMException) => false
     }
   }
 
   def insertBefore(
-    parent: ParentNode.Base,
-    newChild: ChildNode.Base,
-    referenceChild: ChildNode.Base
+    parent: dom.Node,
+    newChild: dom.Node,
+    referenceChild: dom.Node
   ): Boolean = {
     try {
-      parent.ref.insertBefore(newChild = newChild.ref, refChild = referenceChild.ref)
+      parent.insertBefore(newChild = newChild, refChild = referenceChild)
       true
     } catch {
-      case JavaScriptException(_: DOMException) => false
+      case JavaScriptException(_: dom.DOMException) => false
+    }
+  }
+
+  def insertAfter(
+    parent: dom.Node,
+    newChild: dom.Node,
+    referenceChild: dom.Node
+  ): Boolean = {
+    try {
+      // Note: parent.insertBefore correctly handles the case of `refChild == null`
+      parent.insertBefore(newChild = newChild, refChild = referenceChild.nextSibling)
+      true
+    } catch {
+      case JavaScriptException(_: dom.DOMException) => false
     }
   }
 
   def replaceChild(
-    parent: ParentNode.Base,
-    newChild: ChildNode.Base,
-    oldChild: ChildNode.Base
+    parent: dom.Node,
+    newChild: dom.Node,
+    oldChild: dom.Node
   ): Boolean = {
     try {
-      parent.ref.replaceChild(newChild = newChild.ref, oldChild = oldChild.ref)
+      parent.replaceChild(newChild = newChild, oldChild = oldChild)
       true
     } catch {
-      case JavaScriptException(_: DOMException) => false
+      case JavaScriptException(_: dom.DOMException) => false
     }
   }
+
+
+  /** Tree query functions */
+
+  def indexOfChild(
+    parent: dom.Node,
+    child: dom.Node
+  ): Int = {
+    parent.childNodes.indexOf(child)
+  }
+
+  /** Note: This walks up the real DOM element tree, not the Laminar DOM tree.
+    * See ChildNode.isDescendantOf if you want to walk up Laminar's tree instead.
+    */
+  @tailrec final def isDescendantOf(node: dom.Node, ancestor: dom.Node): Boolean = {
+    // @TODO[Performance] Maybe use https://developer.mozilla.org/en-US/docs/Web/API/Node/contains instead (but IE only supports it for Elements)
+    // For children of shadow roots, parentNode is null, but the host property contains a reference to the shadow root
+    val effectiveParentNode = if (node.parentNode != null) {
+      node.parentNode
+    } else {
+      val maybeShadowHost = node.asInstanceOf[js.Dynamic].selectDynamic("host").asInstanceOf[js.UndefOr[dom.Node]]
+      maybeShadowHost.orNull
+    }
+    effectiveParentNode match {
+      case null => false
+      case `ancestor` => true
+      case intermediateParent => isDescendantOf(intermediateParent, ancestor)
+    }
+  }
+
 
 
   /** Events */
 
   def addEventListener[Ev <: dom.Event](
-    element: ReactiveElement.Base,
+    element: dom.Element,
     listener: EventListener[Ev, _]
   ): Unit = {
     //println(s"> Adding listener on ${DomApi.debugNodeDescription(element.ref)} for `${eventPropSetter.key.name}` with useCapture=${eventPropSetter.useCapture}")
-    element.ref.addEventListener(
+    element.addEventListener(
       `type` = EventProcessor.eventProp(listener.eventProcessor).name,
       listener = listener.domCallback,
-      useCapture = EventProcessor.shouldUseCapture(listener.eventProcessor)
+      options = listener.options
     )
   }
 
   def removeEventListener[Ev <: dom.Event](
-    element: ReactiveElement.Base,
+    element: dom.Element,
     listener: EventListener[Ev, _]
   ): Unit = {
-    element.ref.removeEventListener(
+    element.removeEventListener(
       `type` = EventProcessor.eventProp(listener.eventProcessor).name,
       listener = listener.domCallback,
-      useCapture = EventProcessor.shouldUseCapture(listener.eventProcessor)
+      options = listener.options
     )
   }
 
@@ -289,7 +339,10 @@ object DomApi {
     element: ReactiveSvgElement.Base,
     attr: SvgAttr[_]
   ): js.UndefOr[String] = {
-    val domValue = element.ref.getAttributeNS(namespaceURI = attr.namespaceUri.orNull, localName = attr.localName)
+    val domValue = element.ref.getAttributeNS(
+      namespaceURI = attr.namespaceUri.orNull,
+      localName = attr.localName
+    )
     if (domValue != null) {
       domValue
     } else {
@@ -311,10 +364,23 @@ object DomApi {
     attr: SvgAttr[_],
     domValue: String
   ): Unit = {
-    if (domValue == null) { // End users should use `removeSvgAttribute` instead. This is to support boolean attributes.
+    if (domValue == null) {
+      // End users should use `removeSvgAttribute` instead. This is to support boolean attributes.
       removeSvgAttribute(element, attr)
     } else {
-      element.ref.setAttributeNS(namespaceURI = attr.namespaceUri.orNull, qualifiedName = attr.name, value = domValue)
+      attr.namespaceUri.fold {
+        // See https://github.com/raquo/Laminar/issues/143
+        element.ref.setAttribute(
+          name = attr.name,
+          value = domValue
+        )
+      } { namespaceUri =>
+        element.ref.setAttributeNS(
+          namespaceURI = namespaceUri,
+          qualifiedName = attr.name,
+          value = domValue
+        )
+      }
     }
   }
 
@@ -322,7 +388,10 @@ object DomApi {
     element: ReactiveSvgElement.Base,
     attr: SvgAttr[_]
   ): Unit = {
-    element.ref.removeAttributeNS(namespaceURI = attr.namespaceUri.orNull, localName = attr.localName)
+    element.ref.removeAttributeNS(
+      namespaceURI = attr.namespaceUri.orNull, // Tested that this works in Chrome & FF
+      localName = attr.localName
+    )
   }
 
   /** Aria attributes */
@@ -360,7 +429,8 @@ object DomApi {
     attr: AriaAttr[_],
     domValue: String
   ): Unit = {
-    if (domValue == null) { // End users should use `removeAriaAttribute` instead. This is to support boolean attributes.
+    if (domValue == null) {
+      // End users should use `removeAriaAttribute` instead. This is to support boolean attributes.
       removeAriaAttribute(element, attr)
     } else {
       element.ref.setAttribute(attr.name, domValue)

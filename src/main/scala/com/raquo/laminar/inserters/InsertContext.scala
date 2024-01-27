@@ -1,4 +1,4 @@
-package com.raquo.laminar.lifecycle
+package com.raquo.laminar.inserters
 
 import com.raquo.ew.JsMap
 import com.raquo.laminar.DomApi
@@ -6,6 +6,7 @@ import com.raquo.laminar.nodes.{ChildNode, CommentNode, ParentNode, ReactiveElem
 import org.scalajs.dom
 
 import scala.collection.immutable
+import scala.scalajs.js
 
 // #TODO[Naming] This feels more like InserterState?
 //  "Extra nodes" are more like "content nodes"
@@ -61,8 +62,8 @@ import scala.collection.immutable
  * @param extraNodesMap       - Map of child nodes, for more efficient search
  *                              Warning: can get out of sync with the real DOM!
  */
-final class InsertContext[+El <: ReactiveElement.Base](
-  val parentNode: El,
+final class InsertContext(
+  val parentNode: ReactiveElement.Base,
   var sentinelNode: ChildNode.Base,
   var strictMode: Boolean,
   var extraNodeCount: Int, // This is separate from `extraNodesMap` for performance #TODO[Performance]: Check if this is still relevant with JsMap
@@ -97,13 +98,10 @@ final class InsertContext[+El <: ReactiveElement.Base](
       // it as such for the strict mode, and insert a new sentinel node into the DOM.
       val contentNode = sentinelNode
       val newSentinelNode = new CommentNode("")
-      ParentNode.insertChild(
-        parent = parentNode,
-        child = newSentinelNode,
-        atIndex = ParentNode.indexOfChild(
-          parent = parentNode,
-          child = contentNode
-        )
+      DomApi.insertBefore(
+        parent = parentNode.ref,
+        newChild = newSentinelNode.ref,
+        referenceChild = contentNode.ref
       )
 
       // Convert loose mode context values to strict mode context values
@@ -149,17 +147,37 @@ final class InsertContext[+El <: ReactiveElement.Base](
 object InsertContext {
 
   /** Reserve the spot for when we actually insert real nodes later */
-  def reserveSpotContext[El <: ReactiveElement.Base](
-    parentNode: El,
-    strictMode: Boolean
-  ): InsertContext[El] = {
+  def reserveSpotContext(
+    parentNode: ReactiveElement.Base,
+    strictMode: Boolean,
+    hooks: js.UndefOr[InserterHooks]
+  ): InsertContext = {
     val sentinelNode = new CommentNode("")
 
-    ParentNode.appendChild(parent = parentNode, child = sentinelNode)
+    ParentNode.appendChild(parent = parentNode, child = sentinelNode, hooks)
 
+    unsafeMakeReservedSpotContext(
+      parentNode = parentNode,
+      sentinelNode = sentinelNode,
+      strictMode = strictMode
+    )
+  }
+
+  /** Reserve the spot for when we actually insert real nodes later.
+    *
+    * Unsafe: you must make sure yourself that sentinelNode is already
+    * a child of parentNode in the real DOM.
+    *
+    * This method is exposed to help third parties make hydration helpers.
+    */
+  def unsafeMakeReservedSpotContext(
+    parentNode: ReactiveElement.Base,
+    sentinelNode: ChildNode.Base,
+    strictMode: Boolean
+  ): InsertContext = {
     // #Warning[Fragile] - We avoid instantiating a JsMap in loose mode, for performance.
     //  The JsMap is initialized if/when needed, in forceSetStrictMode.
-    new InsertContext[El](
+    new InsertContext(
       parentNode = parentNode,
       sentinelNode = sentinelNode,
       strictMode = strictMode,
@@ -176,4 +194,5 @@ object InsertContext {
     }
     acc
   }
+
 }

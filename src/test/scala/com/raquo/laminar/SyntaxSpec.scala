@@ -391,9 +391,9 @@ class SyntaxSpec extends UnitSpec {
     //implicit def xxxx[A](obs: Observable[_]#Self[A]): Source[A] = obs: Observable[A]
 
     div(
-      cls.toggle("cls1") <-- boolSignal,
-      cls.toggle("cls1") <-- boolStream,
-      cls.toggle("cls1") <-- boolBus,
+      cls("cls1") <-- boolSignal,
+      cls("cls1") <-- boolStream,
+      cls("cls1") <-- boolBus,
       focus <-- boolStream,
       focus <-- boolBus,
       child <-- divObservable,
@@ -415,6 +415,9 @@ class SyntaxSpec extends UnitSpec {
       child.text <-- periodicInt,
       child.text <-- boolBus,
       child.text <-- doubleBus.events,
+      text <-- periodicInt,
+      text <-- boolBus,
+      text <-- doubleBus.events,
       children <-- childrenObs,
       children <-- childrenObs.map(c => c),
       children <-- childrenStream,
@@ -484,6 +487,10 @@ class SyntaxSpec extends UnitSpec {
     Binder { (el: ReactiveElement.Base) =>
       null.asInstanceOf[DynamicSubscription]
     }
+  }
+
+  it("Mod alias lets you get the base type") {
+    val mod: Mod.Base = emptyMod
   }
 
   it("unit-based binding syntax") {
@@ -602,4 +609,14 @@ class SyntaxSpec extends UnitSpec {
     assert(intVar.now() == 15)
   }
 
+  it("compose syntax") {
+    val eventObs = Observer.empty[dom.Event]
+    div(
+      onClick.compose(_.delay(100)) --> eventObs,
+      onClick(_.delay(100)) --> eventObs,
+      //
+      onClick.preventDefault.compose(_.delay(100)) --> eventObs,
+      onClick.preventDefault(_.delay(100)) --> eventObs,
+    )
+  }
 }

@@ -26,8 +26,10 @@ class EventListener[Ev <: dom.Event, Out](
     processor(ev).foreach(callback)
   }
 
-  @deprecated("Renamed: Use `domCallback` instead of `domValue`", "0.12.0")
-  val domValue: js.Function1[Ev, Unit] = domCallback
+  val options: dom.EventListenerOptions = new dom.EventListenerOptions {
+    capture = EventProcessor.shouldUseCapture(eventProcessor)
+    passive = EventProcessor.shouldBePassive(eventProcessor)
+  }
 
   override def bind(element: ReactiveElement.Base): DynamicSubscription = {
     bind(element, unsafePrepend = false)
@@ -38,13 +40,13 @@ class EventListener[Ev <: dom.Event, Out](
       //println(s"> bind ${EventProcessor.eventProp(eventProcessor).name} listener to " + element.ref.outerHTML + s" (prepend = $unsafePrepend)")
       val subscribe = (ctx: MountContext[ReactiveElement.Base]) => {
         //println(s"> add ${EventProcessor.eventProp(eventProcessor).name} listener to " + element.ref.outerHTML + s" (prepend = $unsafePrepend)")
-        DomApi.addEventListener(element, this)
+        DomApi.addEventListener(element.ref, this)
         new Subscription(ctx.owner, cleanup = () => {
           val listenerIndex = element.indexOfEventListener(this)
           if (listenerIndex != -1) {
             //println(s"> remove ${EventProcessor.eventProp(eventProcessor).name} listener from " + element.ref.outerHTML + s" (prepend = $unsafePrepend)")
             element.removeEventListener(listenerIndex)
-            DomApi.removeEventListener(element, this)
+            DomApi.removeEventListener(element.ref, this)
           } else {
             // @TODO[Warn] Issue a warning, this isn't supposed to happen
             //println(">> Trying to remove an listener that isn't there...")
